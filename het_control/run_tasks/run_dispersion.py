@@ -135,7 +135,7 @@ sys.argv = [
     f"experiment.checkpoint_interval={save_interval}",
     f"experiment.save_folder={SAVE_PATH}",
     # f"task.agents_with_same_goal=1",
-    f"task.n_agents=2",
+    # f"task.n_agents=4",
 ]
 
 # 3. Define the Hydra wrapper

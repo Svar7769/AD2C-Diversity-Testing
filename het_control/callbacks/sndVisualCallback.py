@@ -161,7 +161,7 @@ class SNDVisualizationManager:
     def _prepare_matrix(self, snd_matrix):
         """
         Robustly converts and reshapes matrix.
-        Fixes crash by Symmetrizing (Broadcasting) BEFORE accessing diagonals.
+        Handles non-square pairwise distance outputs.
         """
         # 1. Convert to Numpy
         if hasattr(snd_matrix, "detach"):
@@ -169,31 +169,70 @@ class SNDVisualizationManager:
         elif not isinstance(snd_matrix, np.ndarray):
             snd_matrix = np.array(snd_matrix)
 
-        # 2. "Peel" dimensions until we hit 2D
-        # This turns (1, 2, 2) -> (2, 2) and (1, 2, 1) -> (2, 1)
+        # 2. "Peel" dimensions until we hit 2D or 1D
         while snd_matrix.ndim > 2:
             snd_matrix = snd_matrix[0]
 
-        # 3. Handle 1D edge case (if squeeze happened upstream)
+        # 3. Handle non-square matrix from pairwise distances
+        if snd_matrix.ndim == 2 and snd_matrix.shape[0] != snd_matrix.shape[1]:
+            # This is likely a [n_agents, n_pairs] or [n_pairs, n_agents] format
+            # We need to reconstruct the full symmetric matrix
+            
+            # Determine n_agents from the shape
+            n_agents = min(snd_matrix.shape)
+            n_pairs_expected = n_agents * (n_agents - 1) // 2
+            
+            # Check if one dimension matches expected pairs
+            if n_pairs_expected in snd_matrix.shape:
+                # Flatten to get pairwise distances
+                if snd_matrix.shape[1] == n_pairs_expected:
+                    pairwise_flat = snd_matrix[0, :]  # Take first row
+                else:
+                    pairwise_flat = snd_matrix[:, 0]  # Take first column
+                
+                # Reconstruct symmetric matrix from pairwise distances
+                full_matrix = np.zeros((n_agents, n_agents))
+                idx = 0
+                for i in range(n_agents):
+                    for j in range(i + 1, n_agents):
+                        full_matrix[i, j] = pairwise_flat[idx]
+                        full_matrix[j, i] = pairwise_flat[idx]
+                        idx += 1
+                snd_matrix = full_matrix
+            else:
+                # Fallback: just take the square portion
+                n = min(snd_matrix.shape)
+                snd_matrix = snd_matrix[:n, :n]
+
+        # 4. Handle 1D edge case
         if snd_matrix.ndim == 1:
-            # Try to reshape to square, or expand dims
             size = snd_matrix.shape[0]
             n_agents = int(np.sqrt(size))
             if n_agents * n_agents == size:
                 snd_matrix = snd_matrix.reshape(n_agents, n_agents)
             else:
-                # Treat as column vector (N, 1)
-                snd_matrix = snd_matrix[:, None]
+                # Reconstruct from pairwise distances
+                # Calculate n_agents from n_pairs: n_pairs = n*(n-1)/2
+                # Solving: n^2 - n - 2*n_pairs = 0
+                n_agents = int((1 + np.sqrt(1 + 8 * size)) / 2)
+                full_matrix = np.zeros((n_agents, n_agents))
+                idx = 0
+                for i in range(n_agents):
+                    for j in range(i + 1, n_agents):
+                        if idx < size:
+                            full_matrix[i, j] = snd_matrix[idx]
+                            full_matrix[j, i] = snd_matrix[idx]
+                            idx += 1
+                snd_matrix = full_matrix
 
-        # 4. Create copy
+        # 5. Create copy
         snd_matrix = snd_matrix.copy()
 
-        # 5. FIX: Enforce Symmetry FIRST
-        # If input is (2, 1), this line broadcasts it: (2, 1) + (1, 2) = (2, 2)
-        # This automatically "expands" the missing dimension.
-        snd_matrix = (snd_matrix + snd_matrix.T) / 2.0
+        # 6. Ensure symmetry (only if already square)
+        if snd_matrix.shape[0] == snd_matrix.shape[1]:
+            snd_matrix = (snd_matrix + snd_matrix.T) / 2.0
 
-        # 6. NOW set diagonals (Safe because matrix is guaranteed square now)
+        # 7. Set diagonals to zero
         n = snd_matrix.shape[0]
         if n > 0:
             for i in range(n):

@@ -35,7 +35,7 @@ def setup(task_name):
             "hetcontrolmlpempirical": HetControlMlpEmpiricalConfig,
         }
     )
-    if task_name == "vmas/dispersion":   #vmas/navigation
+    if task_name == "vmas/navigation":   #vmas/navigation
         # Set the render callback for the navigatio case study
         VmasTask.render_callback = render_callback
 
@@ -119,8 +119,8 @@ def get_experiment(cfg: DictConfig) -> Experiment:
 #     hydra_experiment()
 
 ABS_CONFIG_PATH = "/home/spatel/Desktop/ad2c/ControllingBehavioralDiversity/het_control/conf"
-CONFIG_NAME = "dispersion_ippo_config"  # Make sure 'navigation_ippo.yaml' exists in the folder above!
-SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/dispersion_ippo/"
+CONFIG_NAME = "navigation_ippo"  # Make sure 'navigation_ippo.yaml' exists in the folder above!
+SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/navigation_ippo/"
 
 save_interval = 1_200_000
 desired_snd = -1.0
@@ -134,7 +134,7 @@ sys.argv = [
     f"experiment.max_n_frames={max_frame}",
     f"experiment.checkpoint_interval={save_interval}",
     f"experiment.save_folder={SAVE_PATH}",
-    # f"task.agents_with_same_goal=1",
+    f"task.agents_with_same_goal=1",
     f"task.n_agents=2",
 ]
 
