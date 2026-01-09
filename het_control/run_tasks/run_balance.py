@@ -118,9 +118,13 @@ def get_experiment(cfg: DictConfig) -> Experiment:
 # if __name__ == "__main__":
 #     hydra_experiment()
 
-ABS_CONFIG_PATH = "/home/spatel/Desktop/ad2c/ControllingBehavioralDiversity/het_control/conf"
+# Lab Path : /home/spatel/Desktop/ad2c/ControllingBehavioralDiversity/het_control/conf
+# Laptop Path: /home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf
+
+
+ABS_CONFIG_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf"
 CONFIG_NAME = "balance_ippo_config"  # Make sure 'navigation_ippo.yaml' exists in the folder above!
-SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/balance_ippo/"
+SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/balance_ippo/"
 
 save_interval = 1_200_000
 desired_snd = -1.0
