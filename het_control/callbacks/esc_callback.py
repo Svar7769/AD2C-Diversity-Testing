@@ -1,242 +1,241 @@
-import os
-import pickle
-from typing import List, Dict,Any, Callable
-
-from PIL import Image
-from matplotlib import pyplot as plt
-import numpy as np
-import io
+"""
+Callback for integrating Extremum Seeking Control with BenchMARL experiments.
+"""
+from typing import List, Optional
 import torch
-import wandb
-from tensordict import TensorDictBase, TensorDict
-from typing import List, Dict, Union
-
+import numpy as np
+from tensordict import TensorDictBase
 from benchmarl.experiment.callback import Callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpirical
-from het_control.callbacks.callback import compute_behavioral_distance
-
-import numpy as np
-
-
-from het_control.callbacks.utils import *
+from het_control.callbacks.callback import get_het_model
+from het_control.callbacks.esc_controller import ExtremumSeekingController
 
 
-class esc:
-    # cutoff_frequencies in rad/s
-    def __init__(
-        self,
-        sampling_period,
-        disturbance_frequency,
-        disturbance_magnitude,
-        integrator_gain,
-        initial_search_value,
-        high_pass_cutoff_frequency,
-        low_pass_cutoff_frequency,
-        use_adapter,
-    ):
-        self.dt = sampling_period  # in [s]
-        self.disturbance_frequency = disturbance_frequency  # in rad/s
-        self.disturbance_magnitude = disturbance_magnitude
-        # negative for gradient descent
-        self.integrator_gain = integrator_gain
-        self.initial_search_value = initial_search_value
-        # boolean, true or false (use the adapter or not)
-        self.use_adapter = use_adapter
-
-        self.high_pass_filter = High_pass_filter_first_order(
-            sampling_period, high_pass_cutoff_frequency, 0, 0
-        )
-        self.low_pass_filter = Low_pass_filter_first_order(
-            sampling_period, low_pass_cutoff_frequency, 0
-        )
-        # current phase of perturbation
-        self.wt = 0
-
-        self.min_setpoint = 0.0
-        
-        # integrator output
-        self.integral = 0
-        # estimated second moment
-        self.m2 = 0
-        self.b2 = 0.8
-        # to prevent from dividing by zero
-        self.epsilon = 1e-8
-
-        return
-
-    def update(self, cost):
-        high_pass_output = self.high_pass_filter.apply(cost)
-        low_pass_input = high_pass_output * np.sin(self.wt)
-        low_pass_output = self.low_pass_filter.apply(low_pass_input)
-
-        # if self.use_adapter:
-        #     # Estimate the second moment (variance) of the gradient
-        #     self.m2 = self.b2 * self.m2 + (1 - self.b2) * np.power(low_pass_output, 2)
-        #     # Always normalize the gradient by its root mean square
-        #     gradient = low_pass_output / (np.sqrt(self.m2) + self.epsilon)
-        # else:
-        #     gradient = low_pass_output
-
-        self.m2 = self.b2 * self.m2 + (1 - self.b2) * np.power(low_pass_output, 2)
-        gradient_mag = np.sqrt(self.m2)
-
-        threshold = 0.2
-
-        high_gain = -0.025  #0.1
-        # low_gain =  -0.0015  #0.05
-
-        if self.use_adapter:
-            if gradient_mag > threshold:
-                gain = high_gain
-            else:
-                gain = self.integrator_gain
-        else:
-            gain = self.integrator_gain
-
-
-        self.integral += gain * low_pass_output * self.dt
-        # setpoint = self.initial_search_value + self.integral
-        
-        # setpoint = max(setpoint, self.min_setpoint)
-
-        setpoint_r = self.initial_search_value + self.integral
-
-        # 2. Apply the clamp to get the actual setpoint
-        setpoint = max(setpoint_r, self.min_setpoint)
-
-        # 3. Correct the integrator state if clamping occurred
-        if setpoint < self.min_setpoint:
-            self.integral = self.min_setpoint - self.initial_search_value
-
-        output = self.disturbance_magnitude * np.sin(self.wt) + setpoint
-
-        # perturbation = self.disturbance_magnitude * np.sin(self.wt) 
-
-        # update wt
-        self.wt += self.disturbance_frequency * self.dt
-        if self.wt > 2 * np.pi:
-            self.wt -= 2 * np.pi
-
-        return (
-            output,
-            high_pass_output,
-            low_pass_output,
-            gradient_mag,
-            low_pass_output,
-            setpoint,
-        )
-
-class ExtremumSeekingController(Callback):
+class ESCCallback(Callback):
     """
-    Implements an Extremum Seeking Controller to optimize a performance metric by
-    periodically adjusting the desired SND.
+    Callback that uses Extremum Seeking Control to automatically tune
+    the desired SND parameter during training based on episode rewards.
+    
+    The ESC applies a sinusoidal perturbation to the SND during training
+    and uses evaluation rewards to estimate gradients and update the setpoint.
     """
+    
     def __init__(
         self,
         control_group: str,
         initial_snd: float,
-        
-        # ESC parameters
-        dither_magnitude: float, # Renamed from dither_amplitude for clarity
-        dither_frequency_rad_s: float, # Explicitly state units
-        integral_gain: float,
-        high_pass_cutoff_rad_s: float,
-        low_pass_cutoff_rad_s: float,
-        use_adapter: bool = True,
-        sampling_period: float = 1.0
-        ):
-
+        dither_magnitude: float = 0.1,
+        dither_frequency_rad_s: float = 0.5,
+        integrator_gain: float = -0.01,
+        high_pass_cutoff_rad_s: float = 0.1,
+        low_pass_cutoff_rad_s: float = 0.05,
+        use_adaptive_gain: bool = True,
+        sampling_period: float = 1.0,
+        min_snd: float = 0.0,
+        max_snd: float = 3.0
+    ):
+        """
+        Args:
+            control_group: Name of the agent group to control
+            initial_snd: Starting value for desired SND
+            dither_magnitude: Amplitude of sinusoidal perturbation
+            dither_frequency_rad_s: Frequency of perturbation (rad/s)
+            integrator_gain: Gain for parameter updates (negative for descent)
+            high_pass_cutoff_rad_s: High-pass filter cutoff frequency (rad/s)
+            low_pass_cutoff_rad_s: Low-pass filter cutoff frequency (rad/s)
+            use_adaptive_gain: Whether to use adaptive gain switching
+            sampling_period: Time between ESC updates (seconds)
+            min_snd: Minimum allowed SND value
+            max_snd: Maximum allowed SND value
+        """
         super().__init__()
         self.control_group = control_group
-        
         self.initial_snd = initial_snd
-
+        self.min_snd = min_snd
+        self.max_snd = max_snd
+        
+        # Store parameters for logging
         self.esc_params = {
             "sampling_period": sampling_period,
-            "disturbance_frequency": dither_frequency_rad_s,
-            "disturbance_magnitude": dither_magnitude,
-            "integrator_gain": integral_gain,
-            "initial_search_value": initial_snd,
-            "high_pass_cutoff_frequency": high_pass_cutoff_rad_s,
-            "low_pass_cutoff_frequency": low_pass_cutoff_rad_s,
-            "use_adapter": use_adapter,
+            "dither_frequency": dither_frequency_rad_s,
+            "dither_magnitude": dither_magnitude,
+            "integrator_gain": integrator_gain,
+            "initial_snd": initial_snd,
+            "high_pass_cutoff": high_pass_cutoff_rad_s,
+            "low_pass_cutoff": low_pass_cutoff_rad_s,
+            "use_adaptive_gain": use_adaptive_gain,
+            "min_snd": min_snd,
+            "max_snd": max_snd
         }
-        # Controller state variables
-        self.model = None
-        self.controller = None
+        
+        self.model: Optional[HetControlMlpEmpirical] = None
+        self.controller: Optional[ExtremumSeekingController] = None
+        
+        # Track if we've applied perturbation for current evaluation
+        self._perturbation_applied = False
 
-    def on_setup(self):
-        """Initializes the controller and logs hyperparameters."""
+    def on_setup(self) -> None:
+        """Initialize the controller and log hyperparameters."""
+        # Log hyperparameters
         hparams = {
-            # "controller_type": "ExtremumSeeking_v2",
-            "control_group": self.control_group,
-            **self.esc_params
+            "esc_control_group": self.control_group,
+            **{f"esc_{k}": v for k, v in self.esc_params.items()}
         }
         self.experiment.logger.log_hparams(**hparams)
-
+        
+        # Verify control group exists
         if self.control_group not in self.experiment.group_policies:
-            print(f"\nWARNING: Controller group '{self.control_group}' not found. Disabling controller.\n")
+            print(f"\nWARNING: ESC control group '{self.control_group}' not found. Disabling controller.\n")
             return
-
+        
+        # Get model
         policy = self.experiment.group_policies[self.control_group]
         self.model = get_het_model(policy)
-
+        
+        # Initialize controller if model is compatible
         if isinstance(self.model, HetControlMlpEmpirical):
-            print(f"\n✅ SUCCESS: Extremum Seeking Controller initialized for group '{self.control_group}'.")
-            self.controller = esc(**self.esc_params)
+            self.controller = ExtremumSeekingController(
+                sampling_period=self.esc_params["sampling_period"],
+                dither_frequency=self.esc_params["dither_frequency"],
+                dither_magnitude=self.esc_params["dither_magnitude"],
+                integrator_gain=self.esc_params["integrator_gain"],
+                initial_value=self.initial_snd,
+                high_pass_cutoff=self.esc_params["high_pass_cutoff"],
+                low_pass_cutoff=self.esc_params["low_pass_cutoff"],
+                use_adaptive_gain=self.esc_params["use_adaptive_gain"],
+                min_output=self.min_snd
+            )
+            
+            # Set initial desired SND
             self.model.desired_snd[:] = float(self.initial_snd)
+            
+            print(f"\n✅ SUCCESS: ESC Controller initialized for group '{self.control_group}'.")
+            print(f"   Initial SND: {self.initial_snd:.3f}")
+            print(f"   Dither: ±{self.esc_params['dither_magnitude']:.3f} @ {self.esc_params['dither_frequency']:.2f} rad/s")
+            print(f"   Integrator gain: {self.esc_params['integrator_gain']:.4f}")
+            print(f"   High-pass cutoff: {self.esc_params['high_pass_cutoff']:.3f} rad/s")
+            print(f"   Low-pass cutoff: {self.esc_params['low_pass_cutoff']:.3f} rad/s")
+            print(f"   Adaptive gain: {self.esc_params['use_adaptive_gain']}")
+            print(f"   SND bounds: [{self.min_snd:.1f}, {self.max_snd:.1f}]\n")
         else:
-            print(f"\nWARNING: A compatible model was not found for group '{self.control_group}'. Disabling controller.\n")
+            print(f"\nWARNING: Compatible model not found for group '{self.control_group}'. Disabling ESC.\n")
             self.model = None
 
-    def on_evaluation_end(self, rollouts: List[TensorDictBase]):
+    def on_evaluation_start(self) -> None:
+        """
+        Apply the current perturbation before evaluation starts.
+        This ensures the evaluation uses the perturbed SND value.
+        """
         if self.model is None or self.controller is None:
             return
-        logs_to_push = {}
         
-        # 1. Collect rewards + compute actual diversity for logging
+        # Get current phase and compute perturbation
+        perturbation = self.controller.a * np.sin(self.controller.phase)
+        setpoint = self.controller.theta_0 + self.controller.integral
+        
+        # Apply perturbed SND (clamped to bounds)
+        perturbed_snd = np.clip(setpoint + perturbation, self.min_snd, self.max_snd)
+        self.model.desired_snd[:] = float(perturbed_snd)
+        
+        self._perturbation_applied = True
+        
+        # Log the perturbation
+        print(f"[ESC] Evaluation with SND: {perturbed_snd:.4f} (setpoint: {setpoint:.4f}, perturbation: {perturbation:+.4f})")
+
+    def on_evaluation_end(self, rollouts: List[TensorDictBase]) -> None:
+        """
+        Update ESC controller based on evaluation episode rewards.
+        
+        The controller uses the mean reward as the performance metric (negated as cost)
+        to adjust the desired SND parameter.
+        """
+        if self.model is None or self.controller is None:
+            return
+        
+        # Collect episode rewards
         episode_rewards = []
         with torch.no_grad():
-            for r in rollouts:
+            for rollout in rollouts:
                 reward_key = ('next', self.control_group, 'reward')
-                total_reward = r.get(reward_key).sum().item() if reward_key in r.keys(include_nested=True) else 0
-                episode_rewards.append(total_reward)
-
-        if not episode_rewards:
-            print("\nWARNING: No episode rewards found. Cannot update controller.\n")
-            self.experiment.logger.log(logs_to_push, step=self.experiment.n_iters_performed)
-            return
-
-        reward_mean = np.mean(episode_rewards)
-        cost = -reward_mean  # Assuming we want to maximize reward, so cost is negative reward
+                if reward_key in rollout.keys(include_nested=True):
+                    # Sum rewards over time for this episode
+                    total_reward = rollout.get(reward_key).sum().item()
+                    episode_rewards.append(total_reward)
         
-        # 2. Call the core ES function
+        if not episode_rewards:
+            print("\nWARNING: No episode rewards found. Skipping ESC update.\n")
+            return
+        
+        # Compute mean reward across episodes
+        mean_reward = np.mean(episode_rewards)
+        reward_std = np.std(episode_rewards)
+        
+        # ESC minimizes cost, so negate reward (maximize reward = minimize negative reward)
+        cost = -mean_reward
+        
+        # Store previous SND for computing update step
+        previous_setpoint = self.controller.theta_0 + self.controller.integral
+        
+        # Update controller with the cost
         (
-            uk, 
-            hpf_out, 
-            lpf_out, 
-            m2_sqrt, 
-            gradient, 
-            setpoint
+            perturbed_output,    # SND with perturbation (for next iteration)
+            hpf_output,          # High-pass filtered cost
+            gradient_estimate,   # Gradient estimate (LPF output)
+            gradient_magnitude,  # RMS of gradient
+            _,                   # Duplicate gradient (not needed)
+            setpoint             # SND setpoint (without perturbation)
         ) = self.controller.update(cost)
         
-        # 3. Update diversity parameter
-        previous_snd = self.model.desired_snd.item()
-        self.model.desired_snd[:] = torch.clamp(torch.tensor(uk), min=0.0)
-
-        print(f"[ESC] Updated SND: {self.model.desired_snd.item()} "
-              f"(Reward: {reward_mean:.3f}, Update Step: {uk - previous_snd:.4f})")
-
-        # 4. Logging
-        logs_to_push.update({
-            "esc/mean_reward": reward_mean,
+        # Clamp setpoint to bounds
+        setpoint = np.clip(setpoint, self.min_snd, self.max_snd)
+        
+        # The model's desired_snd will be updated before next evaluation in on_evaluation_start
+        # For now, just track the setpoint change
+        update_step = setpoint - previous_setpoint
+        
+        # Determine if adaptive gain was triggered
+        using_high_gain = (
+            self.controller.use_adaptive and 
+            gradient_magnitude > self.controller.gradient_threshold
+        )
+        
+        # Log update with more detail
+        print(
+            f"[ESC] Step {self.experiment.n_iters_performed:6d} | "
+            f"Reward: {mean_reward:+7.3f} ±{reward_std:5.3f} | "
+            f"Setpoint: {previous_setpoint:.4f} → {setpoint:.4f} (Δ={update_step:+.4f}) | "
+            f"Grad: {gradient_estimate:+.5f} (RMS: {gradient_magnitude:.5f})"
+            + (f" [HIGH GAIN]" if using_high_gain else "")
+        )
+        
+        # Log comprehensive metrics
+        logs = {
+            # Reward metrics
+            "esc/reward_mean": mean_reward,
+            "esc/reward_std": reward_std,
             "esc/cost": cost,
-            "esc/diversity_output": uk,
-            "esc/diversity_setpoint": setpoint,
-            "esc/gradient_estimate": gradient,
-            "esc/hpf_output": hpf_out,
-            "esc/lpf_output": lpf_out,
-            "esc/m2_sqrt": m2_sqrt,
-            "esc/update_step": uk - previous_snd
-        })
-        self.experiment.logger.log(logs_to_push, step=self.experiment.n_iters_performed)
+            
+            # SND tracking
+            "esc/snd_setpoint": setpoint,
+            "esc/snd_setpoint_previous": previous_setpoint,
+            "esc/snd_update_step": update_step,
+            "esc/snd_perturbed_next": perturbed_output,
+            
+            # Controller internals
+            "esc/gradient_estimate": gradient_estimate,
+            "esc/gradient_magnitude": gradient_magnitude,
+            "esc/hpf_output": hpf_output,
+            "esc/integrator_state": self.controller.integral,
+            "esc/phase": self.controller.phase,
+            "esc/m2": self.controller.m2,
+            
+            # Perturbation info
+            "esc/perturbation_current": perturbed_output - setpoint,
+            
+            # Adaptive gain info
+            "esc/using_high_gain": float(using_high_gain),
+        }
+        
+        self.experiment.logger.log(logs, step=self.experiment.n_iters_performed)
+        
+        self._perturbation_applied = False
