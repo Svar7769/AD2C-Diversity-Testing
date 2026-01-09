@@ -20,7 +20,7 @@ from benchmarl.hydra_config import (
     load_task_config_from_hydra,
     load_model_config_from_hydra,
 )
-from het_control.callback import *
+from het_control.callbacks.callback import *
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
 from het_control.callbacks.esc_callback import ExtremumSeekingController
