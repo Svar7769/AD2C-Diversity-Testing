@@ -1,0 +1,35 @@
+# ESC Controller Configuration
+# This file contains ONLY ESC-specific parameters
+# Task configs, paths, and training params go in the runner scripts
+
+esc_controller:
+  # Control group: "agents" or "adversary"
+  control_group: "agents"
+  
+  # Initial SND value
+  initial_snd: 0.0
+  
+  # Dither signal parameters
+  dither_magnitude: 0.2      # Amplitude of dither signal
+  dither_frequency: 1.0      # Frequency in rad/s
+  
+  # Controller gains and filters
+  integrator_gain: -0.001    # Integrator gain (negative for minimization)
+  high_pass_cutoff: 0.5      # High-pass filter cutoff in rad/s
+  low_pass_cutoff: 0.1       # Low-pass filter cutoff in rad/s
+  
+  # Adaptive control
+  use_adaptive_gain: true    # Enable adaptive gain control
+  sampling_period: 1.0       # Sampling period in seconds
+  
+  # SND constraints
+  min_snd: 0.0               # Minimum allowed SND value
+  max_snd: 3.0               # Maximum allowed SND value
+  
+  # Action space loss parameters
+  use_action_loss: false     # Enable action space loss
+  action_loss_lr: 0.001      # Learning rate for action loss
+  
+  # Task-specific parameters (optional)
+  simple_tag_freeze_policy: false
+  simple_tag_freeze_policy_after_frames: 1000000

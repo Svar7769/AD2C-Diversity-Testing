@@ -1,154 +1,80 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
-
+"""
+Runner script for Navigation task.
+Example showing navigation task WITHOUT ESC (matching your reference code).
+"""
+from run import run_experiment
+from pathlib import Path
 import sys
-import hydra
-from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig, OmegaConf
 
-from hydra.core.global_hydra import GlobalHydra
+# =============================================================================
+# CONFIGURATION - Update these for your system and experiment
+# =============================================================================
 
-from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
-import benchmarl.models
-from benchmarl.algorithms import *
-from benchmarl.environments import VmasTask
-from benchmarl.experiment import Experiment
-from benchmarl.hydra_config import (
-    load_algorithm_config_from_hydra,
-    load_experiment_config_from_hydra,
-    load_task_config_from_hydra,
-    load_model_config_from_hydra,
-)
-from het_control.callbacks.callback import *
-from het_control.environments.vmas import render_callback
-from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
-from het_control.callbacks.esc_callback import ExtremumSeekingController
-from het_control.callbacks.sndESLogger import TrajectorySNDLoggerCallback
-# from het_control.callbacks.performaceLoggerCallback import performaceLoggerCallback
-
-
-
-def setup(task_name):
-    benchmarl.models.model_config_registry.update(
-        {
-            "hetcontrolmlpempirical": HetControlMlpEmpiricalConfig,
-        }
-    )
-    if task_name == "vmas/navigation":   #vmas/navigation
-        # Set the render callback for the navigatio case study
-        VmasTask.render_callback = render_callback
-
-
-def get_experiment(cfg: DictConfig) -> Experiment:
-    hydra_choices = HydraConfig.get().runtime.choices
-    task_name = hydra_choices.task
-    algorithm_name = hydra_choices.algorithm
-
-    setup(task_name)
-
-    print(f"\nAlgorithm: {algorithm_name}, Task: {task_name}")
-    print("\nLoaded config:\n")
-    print(OmegaConf.to_yaml(cfg))
-
-    algorithm_config = load_algorithm_config_from_hydra(cfg.algorithm)
-    experiment_config = load_experiment_config_from_hydra(cfg.experiment)
-    task_config = load_task_config_from_hydra(cfg.task, task_name)
-    critic_model_config = load_model_config_from_hydra(cfg.critic_model)
-    model_config = load_model_config_from_hydra(cfg.model)
-
-    if isinstance(algorithm_config, (MappoConfig, IppoConfig, MasacConfig, IsacConfig)):
-        model_config.probabilistic = True
-        model_config.scale_mapping = algorithm_config.scale_mapping
-        algorithm_config.scale_mapping = (
-            "relu"  # The scaling of std_dev will be done in the model
-        )
-    else:
-        model_config.probabilistic = False
-
-    experiment = Experiment(
-        task=task_config,
-        algorithm_config=algorithm_config,
-        model_config=model_config,
-        critic_model_config=critic_model_config,
-        seed=cfg.seed,
-        config=experiment_config,
-        callbacks=[
-            SndCallback(),
-            # ExtremumSeekingController(
-            #             control_group="agents",
-            #             # control_group="adversary",
-            #             initial_snd=0.0,
-            #             dither_magnitude=0.2,
-            #             dither_frequency_rad_s=1.0,
-            #             integral_gain=-0.001,
-            #             high_pass_cutoff_rad_s=1.0,
-            #             low_pass_cutoff_rad_s=1.0,
-            #             sampling_period=1.0
-            # ),
-            TrajectorySNDLoggerCallback(control_group="agents"),
-            SNDVisualizerCallback(),
-            # TrajectorySNDLoggerCallback(control_group="adversary"),
-            # performaceLoggerCallback(control_group="agents", initial_snd=0.5),
-            NormLoggerCallback(),
-            ActionSpaceLoss(
-                use_action_loss=cfg.use_action_loss, action_loss_lr=cfg.action_loss_lr
-            ),
-        ]
-        + (
-            [
-                TagCurriculum(
-                    cfg.simple_tag_freeze_policy_after_frames,
-                    cfg.simple_tag_freeze_policy,
-                )
-            ]
-            if task_name == "vmas/simple_tag"
-            else []
-        ),
-    )
-    return experiment
-
-
-# @hydra.main(version_base=None, config_path="conf", config_name="config")
-# def hydra_experiment(cfg: DictConfig) -> None:
-#     experiment = get_experiment(cfg=cfg)
-#     experiment.run()
-
-
-# if __name__ == "__main__":
-#     hydra_experiment()
-
+# Paths
 ABS_CONFIG_PATH = "/home/spatel/Desktop/ad2c/ControllingBehavioralDiversity/het_control/conf"
-CONFIG_NAME = "navigation_ippo"  # Make sure 'navigation_ippo.yaml' exists in the folder above!
+CONFIG_NAME = "navigation_ippo"
 SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/navigation_ippo/"
 
-save_interval = 1_200_000
-desired_snd = -1.0
-max_frame = 1_200_000
+# Training parameters
+MAX_FRAMES = 1_200_000
+CHECKPOINT_INTERVAL = 1_200_000
 
-GlobalHydra.instance().clear()
+# Initial SND
+DESIRED_SND = -1.0
 
-sys.argv = [
-    "dummy.py",
-    f"model.desired_snd={desired_snd}",
-    f"experiment.max_n_frames={max_frame}",
-    f"experiment.checkpoint_interval={save_interval}",
-    f"experiment.save_folder={SAVE_PATH}",
-    f"task.agents_with_same_goal=1",
-    f"task.n_agents=2",
-]
+# Task-specific overrides
+TASK_OVERRIDES = {
+    "n_agents": 2,
+    "agents_with_same_goal": 1,
+}
 
-# 3. Define the Hydra wrapper
-@hydra.main(version_base=None, config_path=ABS_CONFIG_PATH, config_name=CONFIG_NAME)
-def hydra_experiment(cfg: DictConfig) -> None:
-    experiment = get_experiment(cfg=cfg)
-    experiment.run()
+# ESC Controller (disabled for this task as per your reference code)
+USE_ESC = True  # Set to False to disable ESC
+ESC_CONFIG_FILE = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf/callback/escontroller.yaml"
 
-# 4. Execute safely
+# =============================================================================
+# RUN EXPERIMENT
+# =============================================================================
+
 if __name__ == "__main__":
-    try:
-        hydra_experiment()
-    except SystemExit:
-        print("Experiment finished successfully.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    # Get ESC config path
+    script_dir = Path(__file__).parent
+    
+    if USE_ESC:
+        # Check if ESC_CONFIG_FILE is absolute or relative
+        esc_config_path = Path(ESC_CONFIG_FILE)
+        if not esc_config_path.is_absolute():
+            esc_config_path = script_dir / ESC_CONFIG_FILE
+        
+        # Verify file exists
+        if not esc_config_path.exists():
+            print(f"\n{'='*80}")
+            print(f"❌ ERROR: ESC config file not found!")
+            print(f"{'='*80}")
+            print(f"Looking for: {esc_config_path}")
+            print(f"\nOptions:")
+            print(f"1. Create the file at the location above")
+            print(f"2. Update ESC_CONFIG_FILE path in this script")
+            print(f"3. Set USE_ESC = False to run without ESC")
+            print(f"{'='*80}\n")
+            sys.exit(1)
+        
+        esc_config_path = str(esc_config_path)
+    else:
+        esc_config_path = None
+    
+    print(f"{'='*80}")
+    print(f"🎯 Running Balance Task")
+    print(f"{'='*80}\n")
+    
+    run_experiment(
+        config_path=ABS_CONFIG_PATH,
+        config_name=CONFIG_NAME,
+        save_path=SAVE_PATH,
+        max_frames=MAX_FRAMES,
+        checkpoint_interval=CHECKPOINT_INTERVAL,
+        desired_snd=DESIRED_SND,
+        task_overrides=TASK_OVERRIDES,
+        esc_config_path=esc_config_path,
+        use_esc=USE_ESC
+    )

@@ -4,6 +4,7 @@ defaults:
   - task: vmas/balance
   - model: hetcontrolmlpempirical
   - model@critic_model: layers/mlp
+  - callback: escontroller
   - _self_
 
 seed: 0
