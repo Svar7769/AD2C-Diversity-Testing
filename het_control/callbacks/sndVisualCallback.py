@@ -5,26 +5,23 @@ import wandb
 import torch
 import networkx as nx
 
-from het_control.callback import get_het_model
-from het_control.snd import compute_behavioral_distance
+from het_control.callbacks.callback import get_het_model
+from het_control.callbacks.snd import compute_behavioral_distance
 from benchmarl.experiment.callback import Callback
-from tensordict._td import TensorDict  # Required for the Graph Visualizer
+from tensordict import TensorDictBase
+
 
 class SNDHeatmapVisualizer:
     def __init__(self, key_name="Visuals/SND_Heatmap"):
         self.key_name = key_name
 
     def generate(self, snd_matrix, step_count):
-        # snd_matrix is now GUARANTEED to be a clean 2D Numpy array
         n_agents = snd_matrix.shape[0]
         agent_labels = [f"Agent {i+1}" for i in range(n_agents)]
         
-        # Calculate SND value
+        # Calculate SND value from upper triangle (excluding diagonal)
         iu = np.triu_indices(n_agents, k=1)
-        if len(iu[0]) > 0:
-            snd_value = float(np.mean(snd_matrix[iu]))
-        else:
-            snd_value = 0.0
+        snd_value = float(np.mean(snd_matrix[iu])) if len(iu[0]) > 0 else 0.0
 
         fig, ax = plt.subplots(figsize=(6, 5))
 
@@ -48,7 +45,6 @@ class SNDHeatmapVisualizer:
         for i in range(n_agents):
             for j in range(n_agents):
                 val = snd_matrix[i, j]
-                # Dynamic text color for visibility
                 text_color = "white" if val < 1.0 else "black"
                 ax.text(
                     j, i, f"{val:.2f}",
@@ -70,7 +66,6 @@ class SNDBarChartVisualizer:
     def generate(self, snd_matrix, step_count):
         n_agents = snd_matrix.shape[0]
         
-        # Create pairs i < j
         pairs = [(i, j) for i in range(n_agents) for j in range(i + 1, n_agents)]
         if not pairs:
             return {}
@@ -148,9 +143,8 @@ class SNDGraphVisualizer:
 
 
 class SNDVisualizationManager:
-    """
-    Manages the individual visualizers and handles ALL data cleaning centrally.
-    """
+    """Manages individual visualizers and handles data cleaning centrally."""
+    
     def __init__(self):
         self.visualizers = [
             SNDHeatmapVisualizer(),
@@ -158,174 +152,139 @@ class SNDVisualizationManager:
             SNDGraphVisualizer()
         ]
 
-    def _prepare_matrix(self, snd_matrix):
+    def _prepare_matrix(self, agent_actions):
         """
-        Robustly converts and reshapes matrix.
-        Handles non-square pairwise distance outputs.
-        """
-        # 1. Convert to Numpy
-        if hasattr(snd_matrix, "detach"):
-            snd_matrix = snd_matrix.detach().cpu().numpy()
-        elif not isinstance(snd_matrix, np.ndarray):
-            snd_matrix = np.array(snd_matrix)
-
-        # 2. "Peel" dimensions until we hit 2D or 1D
-        while snd_matrix.ndim > 2:
-            snd_matrix = snd_matrix[0]
-
-        # 3. Handle non-square matrix from pairwise distances
-        if snd_matrix.ndim == 2 and snd_matrix.shape[0] != snd_matrix.shape[1]:
-            # This is likely a [n_agents, n_pairs] or [n_pairs, n_agents] format
-            # We need to reconstruct the full symmetric matrix
-            
-            # Determine n_agents from the shape
-            n_agents = min(snd_matrix.shape)
-            n_pairs_expected = n_agents * (n_agents - 1) // 2
-            
-            # Check if one dimension matches expected pairs
-            if n_pairs_expected in snd_matrix.shape:
-                # Flatten to get pairwise distances
-                if snd_matrix.shape[1] == n_pairs_expected:
-                    pairwise_flat = snd_matrix[0, :]  # Take first row
-                else:
-                    pairwise_flat = snd_matrix[:, 0]  # Take first column
-                
-                # Reconstruct symmetric matrix from pairwise distances
-                full_matrix = np.zeros((n_agents, n_agents))
-                idx = 0
-                for i in range(n_agents):
-                    for j in range(i + 1, n_agents):
-                        full_matrix[i, j] = pairwise_flat[idx]
-                        full_matrix[j, i] = pairwise_flat[idx]
-                        idx += 1
-                snd_matrix = full_matrix
-            else:
-                # Fallback: just take the square portion
-                n = min(snd_matrix.shape)
-                snd_matrix = snd_matrix[:n, :n]
-
-        # 4. Handle 1D edge case
-        if snd_matrix.ndim == 1:
-            size = snd_matrix.shape[0]
-            n_agents = int(np.sqrt(size))
-            if n_agents * n_agents == size:
-                snd_matrix = snd_matrix.reshape(n_agents, n_agents)
-            else:
-                # Reconstruct from pairwise distances
-                # Calculate n_agents from n_pairs: n_pairs = n*(n-1)/2
-                # Solving: n^2 - n - 2*n_pairs = 0
-                n_agents = int((1 + np.sqrt(1 + 8 * size)) / 2)
-                full_matrix = np.zeros((n_agents, n_agents))
-                idx = 0
-                for i in range(n_agents):
-                    for j in range(i + 1, n_agents):
-                        if idx < size:
-                            full_matrix[i, j] = snd_matrix[idx]
-                            full_matrix[j, i] = snd_matrix[idx]
-                            idx += 1
-                snd_matrix = full_matrix
-
-        # 5. Create copy
-        snd_matrix = snd_matrix.copy()
-
-        # 6. Ensure symmetry (only if already square)
-        if snd_matrix.shape[0] == snd_matrix.shape[1]:
-            snd_matrix = (snd_matrix + snd_matrix.T) / 2.0
-
-        # 7. Set diagonals to zero
-        n = snd_matrix.shape[0]
-        if n > 0:
-            for i in range(n):
-                snd_matrix[i, i] = 0.0
+        Computes SND matrix from agent actions using the EXACT same method as SNDCallback.
         
-        return snd_matrix
+        Args:
+            agent_actions: List of action tensors, one per agent
+                          Each tensor has shape [*batch, action_features]
+            
+        Returns:
+            Symmetric 2D numpy array representing the full distance matrix
+        """
+        n_agents = len(agent_actions)
+        
+        # Use compute_behavioral_distance with just_mean=False (same as model's compute_estimate)
+        # This returns shape [*batch, n_pairs] where n_pairs = n_agents*(n_agents-1)/2
+        pairwise_distances = compute_behavioral_distance(agent_actions, just_mean=False)
+        
+        # Average over batch dimension to get single distance per pair
+        # Result shape: [n_pairs]
+        pairwise_distances_avg = pairwise_distances.mean(dim=tuple(range(pairwise_distances.ndim - 1)))
+        
+        # Convert to numpy
+        pairwise_distances_np = pairwise_distances_avg.detach().cpu().numpy()
+        
+        # Reconstruct the full symmetric matrix from the flattened upper triangular pairs
+        # The compute_behavioral_distance function iterates as: for i in range(n_agents), for j in range(i+1, n_agents)
+        distance_matrix = np.zeros((n_agents, n_agents))
+        
+        pair_idx = 0
+        for i in range(n_agents):
+            for j in range(i + 1, n_agents):
+                distance = pairwise_distances_np[pair_idx]
+                distance_matrix[i, j] = distance
+                distance_matrix[j, i] = distance  # Make symmetric
+                pair_idx += 1
+        
+        # Diagonal should be zero (distance from agent to itself)
+        np.fill_diagonal(distance_matrix, 0.0)
+        
+        return distance_matrix
 
-    def generate_all(self, snd_matrix, step_count):
-        # Clean the matrix ONCE here
-        clean_matrix = self._prepare_matrix(snd_matrix)
+    def generate_all(self, agent_actions, step_count):
+        """
+        Generate all visualizations from agent actions.
+        
+        Args:
+            agent_actions: List of action tensors from each agent
+            step_count: Current training step
+            
+        Returns:
+            Dictionary of plot names to wandb.Image objects
+        """
+        # Compute the distance matrix using the exact same method as SNDCallback
+        clean_matrix = self._prepare_matrix(agent_actions)
         
         all_plots = {}
         for visualizer in self.visualizers:
             try:
-                # Pass the clean matrix to all visualizers
                 plots = visualizer.generate(clean_matrix, step_count)
                 all_plots.update(plots)
             except Exception as e:
                 print(f"Error generating {visualizer.__class__.__name__}: {e}")
-                # Optional: Print shape to help debug if it fails again
-                print(f"Failed Matrix Shape: {clean_matrix.shape}")
+                print(f"Matrix shape: {clean_matrix.shape}")
+        
         return all_plots
-    
+
+
 class SNDVisualizerCallback(Callback):
     """
-    Computes the SND matrix and uses the Manager to log visualizations.
+    Computes SND matrix using the EXACT same method as SNDCallback and logs visualizations.
     """
+    
     def __init__(self):
         super().__init__()
         self.control_group = None
         self.model = None
-        # Initialize the manager that holds the 3 plot classes
         self.viz_manager = SNDVisualizationManager()
 
     def on_setup(self):
-        """Auto-detects the agent group and initializes the model wrapper."""
+        """Auto-detect agent group and initialize model."""
         if not self.experiment.group_policies:
             print("\nWARNING: No group policies found. SND Visualizer disabled.\n")
             return
 
+        # Use the first group (or you can specify which group to visualize)
         self.control_group = list(self.experiment.group_policies.keys())[0]
         policy = self.experiment.group_policies[self.control_group]
         
-        # Ensure 'get_het_model' is imported or available in this scope
         self.model = get_het_model(policy)
 
         if self.model is None:
-             print(f"\nWARNING: Could not extract HetModel for group '{self.control_group}'. Visualizer disabled.\n")
+            print(f"\nWARNING: Could not extract HetModel for group '{self.control_group}'. Visualizer disabled.\n")
+        else:
+            print(f"\nSUCCESS: SND Visualizer initialized for group '{self.control_group}'.\n")
 
-    def _get_agent_actions_for_rollout(self, rollout):
-        """Helper to run the forward pass and get actions for SND computation."""
-        obs = rollout.get((self.control_group, "observation"))
-        actions = []
-        for i in range(self.model.n_agents):
-            temp_td = TensorDict(
-                {(self.control_group, "observation"): obs},
-                batch_size=obs.shape[:-1]
-            )
-            action_td = self.model._forward(temp_td, agent_index=i, compute_estimate=False)
-            actions.append(action_td.get(self.model.out_key))
-        return actions
-
-    def on_evaluation_end(self, rollouts: List[TensorDict]):
-        """Runs at the end of evaluation to compute SND and log plots."""
-        if self.model is None:
+    def on_evaluation_end(self, rollouts: List[TensorDictBase]):
+        """
+        Compute SND and generate visualizations at evaluation end.
+        Uses the EXACT same computation method as SNDCallback.
+        """
+        if self.model is None or not rollouts:
             return
 
-        logs_to_push = {}
-        first_rollout_snd_matrix = None
+        # Only compute for groups with multiple agents (same check as SNDCallback)
+        if not len(self.experiment.group_map[self.control_group]) > 1:
+            return
 
         with torch.no_grad():
-            for i, r in enumerate(rollouts):
-                # We only need the matrix from the first rollout for clean visualization
-                if i > 0: 
-                    break
-
-                agent_actions = self._get_agent_actions_for_rollout(r)
-                
-                # Ensure 'compute_behavioral_distance' is imported/available
-                pairwise_distances_tensor = compute_behavioral_distance(agent_actions, just_mean=False)
-                
-                if pairwise_distances_tensor.ndim > 2:
-                    pairwise_distances_tensor = pairwise_distances_tensor.mean(dim=0)
-
-                first_rollout_snd_matrix = pairwise_distances_tensor.cpu().numpy()
-
-        # Generate and Log Visualizations via the Manager
-        if first_rollout_snd_matrix is not None:
+            # Concatenate observations over time from all rollouts
+            # This matches the SNDCallback approach EXACTLY
+            obs = torch.cat(
+                [rollout.select((self.control_group, "observation")) for rollout in rollouts],
+                dim=0
+            )  # Shape: [*batch_size, n_agents, n_features]
+            
+            # Compute actions that each agent would take for these observations
+            # EXACT same method as SNDCallback
+            agent_actions = []
+            for i in range(self.model.n_agents):
+                action = self.model._forward(
+                    obs, 
+                    agent_index=i, 
+                    compute_estimate=False
+                ).get(self.model.out_key)
+                agent_actions.append(action)
+            
+            # Generate visualizations using the manager
+            # The manager will compute distances using compute_behavioral_distance
+            # with just_mean=False, then reconstruct the full symmetric matrix
             visual_logs = self.viz_manager.generate_all(
-                snd_matrix=first_rollout_snd_matrix, 
+                agent_actions=agent_actions,
                 step_count=self.experiment.n_iters_performed
             )
-            logs_to_push.update(visual_logs)
             
-            # Update the logger
-            self.experiment.logger.log(logs_to_push, step=self.experiment.n_iters_performed)
+            if visual_logs:
+                self.experiment.logger.log(visual_logs, step=self.experiment.n_iters_performed)

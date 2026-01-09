@@ -9,8 +9,8 @@ from tensordict import TensorDictBase, TensorDict
 
 from benchmarl.experiment.callback import Callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpirical
-from het_control.snd import compute_behavioral_distance
-from het_control.utils import overflowing_logits_norm
+from het_control.callbacks.snd import compute_behavioral_distance
+from het_control.callbacks.utils import overflowing_logits_norm
 
 
 def get_het_model(policy):

@@ -6,7 +6,7 @@ import torch
 from torch import nn
 import numpy as np
 
-from het_control.utils import clamp_preserve_gradients
+from het_control.callbacks.utils import clamp_preserve_gradients
 
 
 def squash(loc, action_spec, clamp: bool):

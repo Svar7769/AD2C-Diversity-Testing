@@ -13,12 +13,12 @@ from typing import List, Dict, Union
 
 from benchmarl.experiment.callback import Callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpirical
-from het_control.snd import compute_behavioral_distance
+from het_control.callbacks.callback import compute_behavioral_distance
 
 import numpy as np
 
 
-from .utils import *
+from het_control.callbacks.utils import *
 
 
 class esc:
