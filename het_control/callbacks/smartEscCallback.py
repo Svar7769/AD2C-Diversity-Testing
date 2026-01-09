@@ -1,0 +1,264 @@
+"""
+Callback for integrating Smart Adaptive ESC with BenchMARL experiments.
+"""
+from typing import List, Optional
+import torch
+import numpy as np
+from tensordict import TensorDictBase
+from benchmarl.experiment.callback import Callback
+from het_control.models.het_control_mlp_empirical import HetControlMlpEmpirical
+from het_control.callbacks.callback import get_het_model
+from het_control.callbacks.smartController import SmartAdaptiveESC
+
+
+class SmartESCCallback(Callback):
+    """
+    Callback that uses Smart Adaptive Extremum Seeking Control to automatically tune
+    the desired SND parameter during training.
+    
+    The controller automatically adapts:
+    - Perturbation magnitude (large when exploring, small when converged)
+    - Integrator gain (high when seeking, low when stable)
+    - Convergence state (tracks whether near optimum)
+    """
+    
+    def __init__(
+        self,
+        control_group: str,
+        initial_snd: float,
+        dither_magnitude: float = 0.2,
+        dither_frequency_rad_s: float = 1.0,
+        integrator_gain: float = -1.0,
+        high_pass_cutoff_rad_s: float = 0.5,
+        low_pass_cutoff_rad_s: float = 0.1,
+        sampling_period: float = 1.0,
+        min_snd: float = 0.0,
+        max_snd: float = 3.0,
+        # Smart adaptive features
+        enable_adaptive_dither: bool = True,
+        enable_adaptive_gain: bool = True,
+        enable_state_machine: bool = True,
+        convergence_patience: int = 5,
+        exploration_steps: int = 10,
+    ):
+        """
+        Args:
+            control_group: Name of the agent group to control
+            initial_snd: Starting value for desired SND
+            dither_magnitude: Initial perturbation amplitude
+            dither_frequency_rad_s: Frequency of perturbation (rad/s)
+            integrator_gain: Initial gain for parameter updates (negative for descent)
+            high_pass_cutoff_rad_s: High-pass filter cutoff frequency (rad/s)
+            low_pass_cutoff_rad_s: Low-pass filter cutoff frequency (rad/s)
+            sampling_period: Time between ESC updates (seconds)
+            min_snd: Minimum allowed SND value
+            max_snd: Maximum allowed SND value
+            enable_adaptive_dither: Enable adaptive perturbation magnitude
+            enable_adaptive_gain: Enable adaptive integrator gain
+            enable_state_machine: Enable state machine for convergence detection
+            convergence_patience: Steps to wait before declaring convergence
+            exploration_steps: Initial exploration steps with high perturbation
+        """
+        super().__init__()
+        self.control_group = control_group
+        self.initial_snd = initial_snd
+        self.min_snd = min_snd
+        self.max_snd = max_snd
+        
+        # Store parameters for logging
+        self.esc_params = {
+            "sampling_period": sampling_period,
+            "dither_frequency": dither_frequency_rad_s,
+            "initial_dither_magnitude": dither_magnitude,
+            "initial_integrator_gain": integrator_gain,
+            "initial_snd": initial_snd,
+            "high_pass_cutoff": high_pass_cutoff_rad_s,
+            "low_pass_cutoff": low_pass_cutoff_rad_s,
+            "min_snd": min_snd,
+            "max_snd": max_snd,
+            "enable_adaptive_dither": enable_adaptive_dither,
+            "enable_adaptive_gain": enable_adaptive_gain,
+            "enable_state_machine": enable_state_machine,
+            "convergence_patience": convergence_patience,
+            "exploration_steps": exploration_steps,
+        }
+        
+        self.model: Optional[HetControlMlpEmpirical] = None
+        self.controller: Optional[SmartAdaptiveESC] = None
+
+    def on_setup(self) -> None:
+        """Initialize the controller and log hyperparameters."""
+        # Log hyperparameters
+        hparams = {
+            "esc_control_group": self.control_group,
+            **{f"esc_{k}": v for k, v in self.esc_params.items()}
+        }
+        self.experiment.logger.log_hparams(**hparams)
+        
+        # Verify control group exists
+        if self.control_group not in self.experiment.group_policies:
+            print(f"\nWARNING: ESC control group '{self.control_group}' not found. Disabling controller.\n")
+            return
+        
+        # Get model
+        policy = self.experiment.group_policies[self.control_group]
+        self.model = get_het_model(policy)
+        
+        # Initialize controller if model is compatible
+        if isinstance(self.model, HetControlMlpEmpirical):
+            self.controller = SmartAdaptiveESC(
+                sampling_period=self.esc_params["sampling_period"],
+                initial_dither_frequency=self.esc_params["dither_frequency"],
+                initial_dither_magnitude=self.esc_params["initial_dither_magnitude"],
+                initial_integrator_gain=self.esc_params["initial_integrator_gain"],
+                initial_value=self.initial_snd,
+                high_pass_cutoff=self.esc_params["high_pass_cutoff"],
+                low_pass_cutoff=self.esc_params["low_pass_cutoff"],
+                min_output=self.min_snd,
+                max_output=self.max_snd,
+                enable_adaptive_dither=self.esc_params["enable_adaptive_dither"],
+                enable_adaptive_gain=self.esc_params["enable_adaptive_gain"],
+                enable_state_machine=self.esc_params["enable_state_machine"],
+                convergence_patience=self.esc_params["convergence_patience"],
+                exploration_steps=self.esc_params["exploration_steps"],
+            )
+            
+            # Set initial desired SND (with initial perturbation)
+            initial_perturbation = self.esc_params["initial_dither_magnitude"] * np.sin(0)
+            initial_output = np.clip(
+                self.initial_snd + initial_perturbation,
+                self.min_snd,
+                self.max_snd
+            )
+            self.model.desired_snd[:] = float(initial_output)
+            
+            print(f"\n✅ SUCCESS: Smart Adaptive ESC Controller initialized for group '{self.control_group}'.")
+            print(f"   Initial SND: {self.initial_snd:.3f}")
+            print(f"   Adaptive Features:")
+            print(f"     - Dither adaptation: {'ON' if self.esc_params['enable_adaptive_dither'] else 'OFF'}")
+            print(f"     - Gain adaptation: {'ON' if self.esc_params['enable_adaptive_gain'] else 'OFF'}")
+            print(f"     - State machine: {'ON' if self.esc_params['enable_state_machine'] else 'OFF'}")
+            print(f"   Initial Parameters:")
+            print(f"     - Dither: ±{self.esc_params['initial_dither_magnitude']:.3f} @ {self.esc_params['dither_frequency']:.2f} rad/s")
+            print(f"     - Integrator gain: {self.esc_params['initial_integrator_gain']:.4f}")
+            print(f"     - HPF cutoff: {self.esc_params['high_pass_cutoff']:.3f} rad/s")
+            print(f"     - LPF cutoff: {self.esc_params['low_pass_cutoff']:.3f} rad/s")
+            print(f"   SND bounds: [{self.min_snd:.1f}, {self.max_snd:.1f}]\n")
+        else:
+            print(f"\nWARNING: Compatible model not found for group '{self.control_group}'. Disabling ESC.\n")
+            self.model = None
+
+    def on_evaluation_end(self, rollouts: List[TensorDictBase]) -> None:
+        """
+        Update ESC controller based on evaluation episode rewards.
+        """
+        if self.model is None or self.controller is None:
+            return
+        
+        # Collect episode rewards
+        episode_rewards = []
+        with torch.no_grad():
+            for rollout in rollouts:
+                reward_key = ('next', self.control_group, 'reward')
+                if reward_key in rollout.keys(include_nested=True):
+                    total_reward = rollout.get(reward_key).sum().item()
+                    episode_rewards.append(total_reward)
+        
+        if not episode_rewards:
+            print("\nWARNING: No episode rewards found. Skipping ESC update.\n")
+            return
+        
+        # Compute mean reward across episodes
+        mean_reward = np.mean(episode_rewards)
+        reward_std = np.std(episode_rewards)
+        
+        # ESC minimizes cost
+        cost = -mean_reward
+        
+        # Store previous SND
+        previous_snd = self.model.desired_snd.item()
+        previous_setpoint = self.controller.prev_setpoint
+        
+        # Update controller with adaptive features
+        (
+            perturbed_output,
+            hpf_output,
+            gradient_estimate,
+            gradient_magnitude,
+            _,
+            setpoint,
+            info  # New: adaptive control info
+        ) = self.controller.update(cost)
+        
+        # Clamp perturbed output to bounds
+        perturbed_output_clamped = np.clip(perturbed_output, self.min_snd, self.max_snd)
+        
+        # Update model immediately with perturbed output
+        self.model.desired_snd[:] = float(perturbed_output_clamped)
+        
+        # Compute actual update step
+        update_step = self.model.desired_snd.item() - previous_snd
+        setpoint_change = setpoint - previous_setpoint
+        
+        # Enhanced logging with adaptive info
+        state_emoji = {
+            "exploration": "🔍",
+            "seeking": "🎯",
+            "converged": "✅",
+            "tracking": "📍"
+        }
+        
+        state_str = f"{state_emoji.get(info['state'], '•')} {info['state'].upper()}"
+        
+        print(
+            f"[Smart ESC] Step {self.experiment.n_iters_performed:6d} | "
+            f"State: {state_str} | "
+            f"Reward: {mean_reward:+7.3f} ±{reward_std:5.3f}\n"
+            f"            SND: {previous_snd:.4f} → {self.model.desired_snd.item():.4f} (Δ={update_step:+.4f}) | "
+            f"Setpoint: {previous_setpoint:.4f} → {setpoint:.4f} (Δ={setpoint_change:+.4f})\n"
+            f"            Dither: {info['adaptive_dither']:.4f} ({info['dither_reduction']*100:.0f}% reduced) | "
+            f"Gain: {info['adaptive_gain']:.4f} | "
+            f"Grad: {gradient_estimate:+.5f} (RMS: {gradient_magnitude:.5f})"
+        )
+        
+        # Log comprehensive metrics including adaptive info
+        logs = {
+            # Reward metrics
+            "esc/reward_mean": mean_reward,
+            "esc/reward_std": reward_std,
+            "esc/cost": cost,
+            
+            # SND tracking
+            "esc/snd_actual": self.model.desired_snd.item(),
+            "esc/snd_actual_previous": previous_snd,
+            "esc/snd_update_step": update_step,
+            
+            # Setpoint tracking
+            "esc/snd_setpoint": setpoint,
+            "esc/snd_setpoint_previous": previous_setpoint,
+            "esc/snd_setpoint_change": setpoint_change,
+            
+            # Perturbation info
+            "esc/perturbation_current": perturbed_output_clamped - setpoint,
+            "esc/perturbation_raw": perturbed_output - setpoint,
+            
+            # Controller internals
+            "esc/gradient_estimate": gradient_estimate,
+            "esc/gradient_magnitude": gradient_magnitude,
+            "esc/hpf_output": hpf_output,
+            "esc/integrator_state": self.controller.integral,
+            "esc/phase": self.controller.phase,
+            "esc/m2": self.controller.m2,
+            
+            # Adaptive control metrics (NEW)
+            "esc/adaptive_dither": info["adaptive_dither"],
+            "esc/adaptive_gain": info["adaptive_gain"],
+            "esc/dither_reduction_pct": info["dither_reduction"] * 100,
+            "esc/convergence_state": ["exploration", "seeking", "converged", "tracking"].index(info["state"]),
+            "esc/steps_in_state": info["steps_in_state"],
+            "esc/best_reward": info["best_reward"],
+            "esc/best_setpoint": info["best_setpoint"],
+            "esc/steps_since_improvement": info["steps_since_improvement"],
+        }
+        
+        self.experiment.logger.log(logs, step=self.experiment.n_iters_performed)
