@@ -16,8 +16,9 @@ class ESCCallback(Callback):
     Callback that uses Extremum Seeking Control to automatically tune
     the desired SND parameter during training based on episode rewards.
     
-    The ESC applies a sinusoidal perturbation to the SND during training
-    and uses evaluation rewards to estimate gradients and update the setpoint.
+    The ESC applies a sinusoidal perturbation to the SND continuously
+    (during both training and evaluation) and uses evaluation rewards 
+    to estimate gradients and update the setpoint.
     """
     
     def __init__(
@@ -70,9 +71,6 @@ class ESCCallback(Callback):
         
         self.model: Optional[HetControlMlpEmpirical] = None
         self.controller: Optional[ExtremumSeekingController] = None
-        
-        # Track if we've applied perturbation for current evaluation
-        self._perturbation_applied = False
 
     def on_setup(self) -> None:
         """Initialize the controller and log hyperparameters."""
@@ -106,8 +104,14 @@ class ESCCallback(Callback):
                 min_output=self.min_snd
             )
             
-            # Set initial desired SND
-            self.model.desired_snd[:] = float(self.initial_snd)
+            # Set initial desired SND (with initial perturbation)
+            initial_perturbation = self.controller.a * np.sin(self.controller.phase)
+            initial_output = np.clip(
+                self.initial_snd + initial_perturbation,
+                self.min_snd,
+                self.max_snd
+            )
+            self.model.desired_snd[:] = float(initial_output)
             
             print(f"\n✅ SUCCESS: ESC Controller initialized for group '{self.control_group}'.")
             print(f"   Initial SND: {self.initial_snd:.3f}")
@@ -121,33 +125,13 @@ class ESCCallback(Callback):
             print(f"\nWARNING: Compatible model not found for group '{self.control_group}'. Disabling ESC.\n")
             self.model = None
 
-    def on_evaluation_start(self) -> None:
-        """
-        Apply the current perturbation before evaluation starts.
-        This ensures the evaluation uses the perturbed SND value.
-        """
-        if self.model is None or self.controller is None:
-            return
-        
-        # Get current phase and compute perturbation
-        perturbation = self.controller.a * np.sin(self.controller.phase)
-        setpoint = self.controller.theta_0 + self.controller.integral
-        
-        # Apply perturbed SND (clamped to bounds)
-        perturbed_snd = np.clip(setpoint + perturbation, self.min_snd, self.max_snd)
-        self.model.desired_snd[:] = float(perturbed_snd)
-        
-        self._perturbation_applied = True
-        
-        # Log the perturbation
-        print(f"[ESC] Evaluation with SND: {perturbed_snd:.4f} (setpoint: {setpoint:.4f}, perturbation: {perturbation:+.4f})")
-
     def on_evaluation_end(self, rollouts: List[TensorDictBase]) -> None:
         """
         Update ESC controller based on evaluation episode rewards.
         
         The controller uses the mean reward as the performance metric (negated as cost)
-        to adjust the desired SND parameter.
+        to adjust the desired SND parameter. The updated perturbed SND is immediately
+        applied to the model for use in the next training phase.
         """
         if self.model is None or self.controller is None:
             return
@@ -173,7 +157,8 @@ class ESCCallback(Callback):
         # ESC minimizes cost, so negate reward (maximize reward = minimize negative reward)
         cost = -mean_reward
         
-        # Store previous SND for computing update step
+        # Store previous SND (actual value with perturbation)
+        previous_snd = self.model.desired_snd.item()
         previous_setpoint = self.controller.theta_0 + self.controller.integral
         
         # Update controller with the cost
@@ -186,12 +171,16 @@ class ESCCallback(Callback):
             setpoint             # SND setpoint (without perturbation)
         ) = self.controller.update(cost)
         
-        # Clamp setpoint to bounds
-        setpoint = np.clip(setpoint, self.min_snd, self.max_snd)
+        # Clamp perturbed output to bounds
+        perturbed_output_clamped = np.clip(perturbed_output, self.min_snd, self.max_snd)
         
-        # The model's desired_snd will be updated before next evaluation in on_evaluation_start
-        # For now, just track the setpoint change
-        update_step = setpoint - previous_setpoint
+        # ⭐ KEY FIX: Update model immediately with perturbed output
+        # This ensures training uses the new ESC-controlled SND value
+        self.model.desired_snd[:] = float(perturbed_output_clamped)
+        
+        # Compute actual update step
+        update_step = self.model.desired_snd.item() - previous_snd
+        setpoint_change = setpoint - previous_setpoint
         
         # Determine if adaptive gain was triggered
         using_high_gain = (
@@ -203,7 +192,8 @@ class ESCCallback(Callback):
         print(
             f"[ESC] Step {self.experiment.n_iters_performed:6d} | "
             f"Reward: {mean_reward:+7.3f} ±{reward_std:5.3f} | "
-            f"Setpoint: {previous_setpoint:.4f} → {setpoint:.4f} (Δ={update_step:+.4f}) | "
+            f"SND: {previous_snd:.4f} → {self.model.desired_snd.item():.4f} (Δ={update_step:+.4f}) | "
+            f"Setpoint: {previous_setpoint:.4f} → {setpoint:.4f} (Δ={setpoint_change:+.4f}) | "
             f"Grad: {gradient_estimate:+.5f} (RMS: {gradient_magnitude:.5f})"
             + (f" [HIGH GAIN]" if using_high_gain else "")
         )
@@ -215,11 +205,19 @@ class ESCCallback(Callback):
             "esc/reward_std": reward_std,
             "esc/cost": cost,
             
-            # SND tracking
+            # SND tracking (actual applied values)
+            "esc/snd_actual": self.model.desired_snd.item(),
+            "esc/snd_actual_previous": previous_snd,
+            "esc/snd_update_step": update_step,
+            
+            # Setpoint tracking (without perturbation)
             "esc/snd_setpoint": setpoint,
             "esc/snd_setpoint_previous": previous_setpoint,
-            "esc/snd_update_step": update_step,
-            "esc/snd_perturbed_next": perturbed_output,
+            "esc/snd_setpoint_change": setpoint_change,
+            
+            # Perturbation info
+            "esc/perturbation_current": perturbed_output_clamped - setpoint,
+            "esc/perturbation_raw": perturbed_output - setpoint,
             
             # Controller internals
             "esc/gradient_estimate": gradient_estimate,
@@ -229,13 +227,8 @@ class ESCCallback(Callback):
             "esc/phase": self.controller.phase,
             "esc/m2": self.controller.m2,
             
-            # Perturbation info
-            "esc/perturbation_current": perturbed_output - setpoint,
-            
             # Adaptive gain info
             "esc/using_high_gain": float(using_high_gain),
         }
         
         self.experiment.logger.log(logs, step=self.experiment.n_iters_performed)
-        
-        self._perturbation_applied = False
