@@ -1,17 +1,20 @@
 """
 Runner script for Balance task with ESC control.
-All task-specific parameters are defined here.
+Updated for the new system path: /home/svarp/Desktop/Projects/ad2c - testEnv/
 """
 from het_control.run import run_experiment
-from pathlib import Path
-import sys
+import yaml
+import os
 
 # =============================================================================
-# CONFIGURATION - Update these for your system and experiment
+# CONFIGURATION - Updated Paths for New System
 # =============================================================================
+
+# Base directory for the project
+BASE_DIR = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing"
 
 # Paths
-ABS_CONFIG_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf"
+ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "balance_ippo_config"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/balance_ippo/"
 
@@ -28,45 +31,53 @@ TASK_OVERRIDES = {
     # "agents_with_same_goal": 1,
 }
 
-# ESC Controller
+# ESC Controller Configuration
 USE_ESC = True  # Set to False to disable ESC
-ESC_CONFIG_FILE = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf/callback/escontroller.yaml"
+ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
+
+# ESC parameter overrides
+ESC_OVERRIDES = {
+    "control_group": "agents",
+    "initial_snd": DESIRED_SND,
+    # "dither_magnitude": 0.2,
+}
 
 # =============================================================================
 # RUN EXPERIMENT
 # =============================================================================
 
 if __name__ == "__main__":
-    # Get ESC config path
-    script_dir = Path(__file__).parent
-    
-    if USE_ESC:
-        # Check if ESC_CONFIG_FILE is absolute or relative
-        esc_config_path = Path(ESC_CONFIG_FILE)
-        if not esc_config_path.is_absolute():
-            esc_config_path = script_dir / ESC_CONFIG_FILE
-        
-        # Verify file exists
-        if not esc_config_path.exists():
-            print(f"\n{'='*80}")
-            print(f"❌ ERROR: ESC config file not found!")
-            print(f"{'='*80}")
-            print(f"Looking for: {esc_config_path}")
-            print(f"\nOptions:")
-            print(f"1. Create the file at the location above")
-            print(f"2. Update ESC_CONFIG_FILE path in this script")
-            print(f"3. Set USE_ESC = False to run without ESC")
-            print(f"{'='*80}\n")
-            sys.exit(1)
-        
-        esc_config_path = str(esc_config_path)
+    # Load ESC config and apply overrides to create a temporary modified config
+    temp_esc_config = None
+    if USE_ESC and ESC_OVERRIDES:
+        try:
+            with open(ESC_CONFIG_FILE, 'r') as f:
+                esc_config = yaml.safe_load(f)
+            
+            if 'esc_controller' not in esc_config:
+                esc_config['esc_controller'] = {}
+                
+            for key, value in ESC_OVERRIDES.items():
+                esc_config['esc_controller'][key] = value
+                print(f"🔧 Overriding ESC parameter: {key} = {value}")
+            
+            # Save to a task-specific temporary file
+            temp_esc_config = "/tmp/escontroller_balance.yaml"
+            with open(temp_esc_config, 'w') as f:
+                yaml.dump(esc_config, f)
+            
+            esc_config_to_use = temp_esc_config
+        except FileNotFoundError:
+            print(f"⚠️ Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
+            esc_config_to_use = ESC_CONFIG_FILE
     else:
-        esc_config_path = None
+        esc_config_to_use = ESC_CONFIG_FILE
     
     print(f"{'='*80}")
-    print(f"🎯 Running Balance Task")
+    print(f"🎯 Running Balance Task (New System Path)")
     print(f"{'='*80}\n")
     
+    # Execute via the reusable run_experiment function from run.py
     run_experiment(
         config_path=ABS_CONFIG_PATH,
         config_name=CONFIG_NAME,
@@ -75,6 +86,6 @@ if __name__ == "__main__":
         checkpoint_interval=CHECKPOINT_INTERVAL,
         desired_snd=DESIRED_SND,
         task_overrides=TASK_OVERRIDES,
-        esc_config_path=esc_config_path,
+        esc_config_path=esc_config_to_use,
         use_esc=USE_ESC
     )

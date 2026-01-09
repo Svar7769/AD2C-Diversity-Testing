@@ -1,154 +1,92 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
+"""
+Runner script for Discovery task with ESC control.
+Updated for the new system path: /home/svarp/Desktop/Projects/ad2c - testEnv/
+"""
+from het_control.run import run_experiment
+import yaml
+import os
 
-import sys
-import hydra
-from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig, OmegaConf
+# =============================================================================
+# CONFIGURATION - Update Paths for New System
+# =============================================================================
 
-from hydra.core.global_hydra import GlobalHydra
+# Base directory for the project
+BASE_DIR = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing"
 
-from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
-import benchmarl.models
-from benchmarl.algorithms import *
-from benchmarl.environments import VmasTask
-from benchmarl.experiment import Experiment
-from benchmarl.hydra_config import (
-    load_algorithm_config_from_hydra,
-    load_experiment_config_from_hydra,
-    load_task_config_from_hydra,
-    load_model_config_from_hydra,
-)
-from het_control.callbacks.callback import *
-from het_control.environments.vmas import render_callback
-from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
-from het_control.callbacks.esc_callback import ExtremumSeekingController
-from het_control.callbacks.sndESLogger import TrajectorySNDLoggerCallback
-# from het_control.callbacks.performaceLoggerCallback import performaceLoggerCallback
+# Paths
+ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
+CONFIG_NAME = "discovery_ippo_config"
+SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/discovery_ippo/"
 
+# Training parameters
+MAX_FRAMES = 1_200_000
+CHECKPOINT_INTERVAL = 1_200_000
 
+# Initial SND (matching your reference -1.0 value)
+DESIRED_SND = -1.0
 
-def setup(task_name):
-    benchmarl.models.model_config_registry.update(
-        {
-            "hetcontrolmlpempirical": HetControlMlpEmpiricalConfig,
-        }
-    )
-    if task_name == "vmas/discovery":   #vmas/navigation
-        # Set the render callback for the navigatio case study
-        VmasTask.render_callback = render_callback
+# Task-specific overrides
+TASK_OVERRIDES = {
+    # Add any specific discovery parameters here if needed
+    "n_agents": 3,
+    "n_targets": 5,
+}
 
+# ESC Controller Configuration
+USE_ESC = True  
+ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
-def get_experiment(cfg: DictConfig) -> Experiment:
-    hydra_choices = HydraConfig.get().runtime.choices
-    task_name = hydra_choices.task
-    algorithm_name = hydra_choices.algorithm
+# Specific overrides for this task
+ESC_OVERRIDES = {
+    "control_group": "agents",
+    "initial_snd": DESIRED_SND,
+}
 
-    setup(task_name)
+# =============================================================================
+# RUN EXPERIMENT
+# =============================================================================
 
-    print(f"\nAlgorithm: {algorithm_name}, Task: {task_name}")
-    print("\nLoaded config:\n")
-    print(OmegaConf.to_yaml(cfg))
-
-    algorithm_config = load_algorithm_config_from_hydra(cfg.algorithm)
-    experiment_config = load_experiment_config_from_hydra(cfg.experiment)
-    task_config = load_task_config_from_hydra(cfg.task, task_name)
-    critic_model_config = load_model_config_from_hydra(cfg.critic_model)
-    model_config = load_model_config_from_hydra(cfg.model)
-
-    if isinstance(algorithm_config, (MappoConfig, IppoConfig, MasacConfig, IsacConfig)):
-        model_config.probabilistic = True
-        model_config.scale_mapping = algorithm_config.scale_mapping
-        algorithm_config.scale_mapping = (
-            "relu"  # The scaling of std_dev will be done in the model
-        )
-    else:
-        model_config.probabilistic = False
-
-    experiment = Experiment(
-        task=task_config,
-        algorithm_config=algorithm_config,
-        model_config=model_config,
-        critic_model_config=critic_model_config,
-        seed=cfg.seed,
-        config=experiment_config,
-        callbacks=[
-            SndCallback(),
-            # ExtremumSeekingController(
-            #             control_group="agents",
-            #             # control_group="adversary",
-            #             initial_snd=0.0,
-            #             dither_magnitude=0.2,
-            #             dither_frequency_rad_s=1.0,
-            #             integral_gain=-0.001,
-            #             high_pass_cutoff_rad_s=1.0,
-            #             low_pass_cutoff_rad_s=1.0,
-            #             sampling_period=1.0
-            # ),
-            TrajectorySNDLoggerCallback(control_group="agents"),
-            SNDVisualizerCallback(),
-            # TrajectorySNDLoggerCallback(control_group="adversary"),
-            # performaceLoggerCallback(control_group="agents", initial_snd=0.5),
-            NormLoggerCallback(),
-            ActionSpaceLoss(
-                use_action_loss=cfg.use_action_loss, action_loss_lr=cfg.action_loss_lr
-            ),
-        ]
-        + (
-            [
-                TagCurriculum(
-                    cfg.simple_tag_freeze_policy_after_frames,
-                    cfg.simple_tag_freeze_policy,
-                )
-            ]
-            if task_name == "vmas/simple_tag"
-            else []
-        ),
-    )
-    return experiment
-
-
-# @hydra.main(version_base=None, config_path="conf", config_name="config")
-# def hydra_experiment(cfg: DictConfig) -> None:
-#     experiment = get_experiment(cfg=cfg)
-#     experiment.run()
-
-
-# if __name__ == "__main__":
-#     hydra_experiment()
-
-ABS_CONFIG_PATH = "/home/spatel/Desktop/ad2c/ControllingBehavioralDiversity/het_control/conf"
-CONFIG_NAME = "discovery_ippo_config"  # Make sure 'navigation_ippo.yaml' exists in the folder above!
-SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/discovery_ippo/"
-
-save_interval = 1_200_000
-desired_snd = -1.0
-max_frame = 1_200_000
-
-GlobalHydra.instance().clear()
-
-sys.argv = [
-    "dummy.py",
-    f"model.desired_snd={desired_snd}",
-    f"experiment.max_n_frames={max_frame}",
-    f"experiment.checkpoint_interval={save_interval}",
-    f"experiment.save_folder={SAVE_PATH}",
-    # f"task.agents_with_same_goal=1",
-    # f"task.n_agents=4",
-]
-
-# 3. Define the Hydra wrapper
-@hydra.main(version_base=None, config_path=ABS_CONFIG_PATH, config_name=CONFIG_NAME)
-def hydra_experiment(cfg: DictConfig) -> None:
-    experiment = get_experiment(cfg=cfg)
-    experiment.run()
-
-# 4. Execute safely
 if __name__ == "__main__":
-    try:
-        hydra_experiment()
-    except SystemExit:
-        print("Experiment finished successfully.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    # Load ESC config and apply overrides to create a temporary modified config
+    temp_esc_config = None
+    if USE_ESC and ESC_OVERRIDES:
+        try:
+            with open(ESC_CONFIG_FILE, 'r') as f:
+                esc_config = yaml.safe_load(f)
+            
+            # Apply overrides to the 'esc_controller' block in the YAML
+            if 'esc_controller' not in esc_config:
+                esc_config['esc_controller'] = {}
+                
+            for key, value in ESC_OVERRIDES.items():
+                esc_config['esc_controller'][key] = value
+                print(f"🔧 Overriding ESC parameter: {key} = {value}")
+            
+            # Save to a task-specific temporary file
+            temp_esc_config = "/tmp/escontroller_discovery.yaml"
+            with open(temp_esc_config, 'w') as f:
+                yaml.dump(esc_config, f)
+            
+            esc_config_to_use = temp_esc_config
+        except FileNotFoundError:
+            print(f"⚠️ Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
+            esc_config_to_use = ESC_CONFIG_FILE
+    else:
+        esc_config_to_use = ESC_CONFIG_FILE
+    
+    print(f"{'='*80}")
+    print(f"🎯 Running Discovery Task")
+    print(f"{'='*80}\n")
+    
+    # Execute via the reusable run_experiment function from run.py
+    run_experiment(
+        config_path=ABS_CONFIG_PATH,
+        config_name=CONFIG_NAME,
+        save_path=SAVE_PATH,
+        max_frames=MAX_FRAMES,
+        checkpoint_interval=CHECKPOINT_INTERVAL,
+        desired_snd=DESIRED_SND,
+        task_overrides=TASK_OVERRIDES,
+        esc_config_path=esc_config_to_use,
+        use_esc=USE_ESC
+    )

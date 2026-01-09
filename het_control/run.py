@@ -42,7 +42,7 @@ def setup(task_name: str) -> None:
     })
     
     # Task-specific render callbacks
-    if task_name in ["vmas/balance", "vmas/navigation"]:
+    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire","vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", "vmas/reverse_transport","vmas/sampling","vmas/tag"]:
         VmasTask.render_callback = render_callback
 
 

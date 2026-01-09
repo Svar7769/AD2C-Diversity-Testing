@@ -14,7 +14,7 @@ esc_controller:
   dither_frequency: 1.0      # Frequency in rad/s
   
   # Controller gains and filters
-  integrator_gain: -0.001    # Integrator gain (negative for minimization)
+  integrator_gain: -0.01    # Integrator gain (negative for minimization)
   high_pass_cutoff: 0.5      # High-pass filter cutoff in rad/s
   low_pass_cutoff: 0.1       # Low-pass filter cutoff in rad/s
   

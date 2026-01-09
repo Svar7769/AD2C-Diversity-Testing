@@ -1,18 +1,20 @@
 """
 Runner script for Simple Tag task with ESC control.
-Example showing adversarial control group.
+Example showing adversarial control group on the new system path.
 """
 from het_control.run import run_experiment
-from pathlib import Path
-import sys
 import yaml
+import os
 
 # =============================================================================
-# CONFIGURATION - Update these for your system and experiment
+# CONFIGURATION - Updated Paths for New System
 # =============================================================================
+
+# Base directory for the project
+BASE_DIR = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing"
 
 # Paths
-ABS_CONFIG_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf"
+ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "tag_ippo_config"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/simple_tag_ippo/"
 
@@ -29,16 +31,16 @@ TASK_OVERRIDES = {
     "num_adversaries": 2,
 }
 
-# ESC Controller
+# ESC Controller Configuration
 USE_ESC = True
-ESC_CONFIG_FILE = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing/het_control/conf/callback/escontroller.yaml"
+ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # ESC parameter overrides for adversarial control
 ESC_OVERRIDES = {
-    "control_group": "adversary",  # Override to control adversary group
-    # You can override other params too:
-    # "dither_magnitude": 0.3,
-    # "max_snd": 4.0,
+    "control_group": "adversary",  # Controls the predators (adversaries)
+    "initial_snd": DESIRED_SND,
+    # "simple_tag_freeze_policy": False,
+    # "simple_tag_freeze_policy_after_frames": 1000000,
 }
 
 # =============================================================================
@@ -46,23 +48,29 @@ ESC_OVERRIDES = {
 # =============================================================================
 
 if __name__ == "__main__":
-    # Load ESC config and apply overrides
+    # Load ESC config and apply overrides to create a temporary modified config
     temp_esc_config = None
     if USE_ESC and ESC_OVERRIDES:
-        with open(ESC_CONFIG_FILE, 'r') as f:
-            esc_config = yaml.safe_load(f)
-        
-        # Apply overrides
-        for key, value in ESC_OVERRIDES.items():
-            esc_config['esc_controller'][key] = value
-            print(f"🔧 Overriding ESC parameter: {key} = {value}")
-        
-        # Save to temporary file
-        temp_esc_config = "/tmp/escontroller_simple_tag.yaml"
-        with open(temp_esc_config, 'w') as f:
-            yaml.dump(esc_config, f)
-        
-        esc_config_to_use = temp_esc_config
+        try:
+            with open(ESC_CONFIG_FILE, 'r') as f:
+                esc_config = yaml.safe_load(f)
+            
+            if 'esc_controller' not in esc_config:
+                esc_config['esc_controller'] = {}
+                
+            for key, value in ESC_OVERRIDES.items():
+                esc_config['esc_controller'][key] = value
+                print(f"🔧 Overriding ESC parameter: {key} = {value}")
+            
+            # Save to a task-specific temporary file
+            temp_esc_config = "/tmp/escontroller_simple_tag.yaml"
+            with open(temp_esc_config, 'w') as f:
+                yaml.dump(esc_config, f)
+            
+            esc_config_to_use = temp_esc_config
+        except FileNotFoundError:
+            print(f"⚠️ Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
+            esc_config_to_use = ESC_CONFIG_FILE
     else:
         esc_config_to_use = ESC_CONFIG_FILE
     
@@ -70,6 +78,7 @@ if __name__ == "__main__":
     print(f"🎯 Running Simple Tag Task (Adversarial ESC)")
     print(f"{'='*80}\n")
     
+    # Execute via the reusable run_experiment function from run.py
     run_experiment(
         config_path=ABS_CONFIG_PATH,
         config_name=CONFIG_NAME,
