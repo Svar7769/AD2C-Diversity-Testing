@@ -9,7 +9,7 @@ from torch import nn
 from torchrl.modules import MultiAgentMLP
 
 from benchmarl.models.common import Model, ModelConfig
-from het_control.utils import overflowing_logits_norm
+from het_control.callbacks.utils import overflowing_logits_norm
 from .utils import squash
 
 

@@ -12,8 +12,8 @@ from .utils import HighPassFilter, LowPassFilter
 
 from benchmarl.models.common import Model, ModelConfig
 # Make sure these imports are correct for your project structure
-from het_control.snd import compute_behavioral_distance
-from het_control.utils import overflowing_logits_norm
+from het_control.callbacks.snd import compute_behavioral_distance
+from het_control.callbacks.utils import overflowing_logits_norm
 from .utils import squash
 
 import numpy as np
