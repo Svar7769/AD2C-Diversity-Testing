@@ -156,9 +156,14 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
 
 
 def load_esc_config(config_path: str) -> Dict[str, Any]:
-    """Load ESC controller configuration from YAML file."""
+    """
+    Load ESC controller configuration from YAML file.
+    Extracts the esc_controller section directly.
+    """
     with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        full_config = yaml.safe_load(f)
+        # Extract the nested esc_controller section
+        return full_config.get('esc_controller', {})
 
 
 def run_experiment(
@@ -190,6 +195,15 @@ def run_experiment(
     esc_config = None
     if use_esc and esc_config_path is not None:
         esc_config = load_esc_config(esc_config_path)
+        
+        # Print what was loaded for debugging
+        print("\n" + "="*80)
+        print("📄 Loaded ESC Configuration from file:")
+        print("="*80)
+        for key, value in esc_config.items():
+            print(f"  {key}: {value}")
+        print("="*80 + "\n")
+        
         # Use ESC's initial_snd if not explicitly overridden
         if 'initial_snd' in esc_config:
             desired_snd = esc_config['initial_snd']
@@ -212,7 +226,7 @@ def run_experiment(
     
     # Add ESC parameters if using ESC
     if use_esc and esc_config is not None:
-        # Add new ESC parameters with + prefix
+        # Add new ESC parameters with + prefix (directly from loaded config)
         esc_params_to_add = {
             "initial_snd": esc_config.get('initial_snd', 0.0),
             "esc_dither_magnitude": esc_config.get('dither_magnitude', 0.2),
@@ -297,8 +311,3 @@ def run_experiment(
         print(f"❌ ERROR: An error occurred: {e}")
         print("="*80 + "\n")
         raise
-
-
-if __name__ == "__main__":
-    print("This is a library module. Import and use run_experiment() function.")
-    print("See run_balance.py or run_navigation.py for usage examples.")
