@@ -1,0 +1,230 @@
+{
+  "unimodal_easy": {
+    "Base ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.0002832740952848134,
+      "final_error_std": 0.00018222019549488837,
+      "stability_mean": 3.0272951982528477e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 0.0016353614513658979
+    },
+    "Smart Adaptive ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.00023176027459821568,
+      "final_error_std": 0.000123424822859859,
+      "stability_mean": 3.104245028274237e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 0.00043057595072924597
+    },
+    "Conservative ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.00013533421823093184,
+      "final_error_std": 9.49277670152484e-05,
+      "stability_mean": 1.4797754160518253e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": -0.01976540107964602
+    },
+    "Aggressive ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.0003662338187232965,
+      "final_error_std": 0.0002994476112512499,
+      "stability_mean": 4.781149950509982e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": -0.003647895808989965
+    }
+  },
+  "unimodal_noisy": {
+    "Base ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.0013732539949664227,
+      "final_error_std": 0.0009733247500290468,
+      "stability_mean": 8.111507235547812e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 0.04250298463754725
+    },
+    "Smart Adaptive ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.0013094437195474754,
+      "final_error_std": 0.0008125201037994695,
+      "stability_mean": 0.00011518242276608894,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": -0.0010779201843855572
+    },
+    "Conservative ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.0006474989591586997,
+      "final_error_std": 0.00041260487737270553,
+      "stability_mean": 6.703538612276446e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": -0.03154470403330484
+    },
+    "Aggressive ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.0022104635137279805,
+      "final_error_std": 0.0024222619233229383,
+      "stability_mean": 0.00022476292540019683,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 0.045944791600710834
+    }
+  },
+  "bimodal": {
+    "Base ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.700047445866766,
+      "final_error_std": 0.0002683008006956528,
+      "stability_mean": 3.4187330288467356e-05,
+      "trapped_count_mean": 8.0,
+      "exploration_eff_mean": 0.043840464727067936
+    },
+    "Smart Adaptive ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.699890063394128,
+      "final_error_std": 0.000212238288089369,
+      "stability_mean": 2.3877050630802663e-05,
+      "trapped_count_mean": 8.0,
+      "exploration_eff_mean": 0.006416135486224596
+    },
+    "Conservative ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.6999776686902031,
+      "final_error_std": 0.00020187432776716877,
+      "stability_mean": 1.2136811823731885e-05,
+      "trapped_count_mean": 8.0,
+      "exploration_eff_mean": 0.10239297901466324
+    },
+    "Aggressive ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.6995803969034043,
+      "final_error_std": 0.0004020661377115418,
+      "stability_mean": 4.665133140010316e-05,
+      "trapped_count_mean": 8.0,
+      "exploration_eff_mean": 0.022646732343039502
+    }
+  },
+  "multimodal": {
+    "Base ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.00029116708357546404,
+      "final_error_std": 0.00023753034555130115,
+      "stability_mean": 2.4962594955799e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 10.489045703708523
+    },
+    "Smart Adaptive ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.00030629718637368653,
+      "final_error_std": 0.00018203922466327209,
+      "stability_mean": 3.0552190631395606e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 1.750848859213995
+    },
+    "Conservative ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.00018566019456924687,
+      "final_error_std": 0.00015921598635904833,
+      "stability_mean": 1.1263698006559506e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 21.00735784780239
+    },
+    "Aggressive ESC": {
+      "convergence_time_mean": 20.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.00047619930010448544,
+      "final_error_std": 0.00037828950224293384,
+      "stability_mean": 4.3018348463988174e-05,
+      "trapped_count_mean": 0.0,
+      "exploration_eff_mean": 5.246552812870711
+    }
+  },
+  "moving_sine": {
+    "Base ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.1988255242257325,
+      "final_error_std": 6.92022009705715e-05,
+      "stability_mean": 2.4901690084733366e-05,
+      "trapped_count_mean": 7.0,
+      "exploration_eff_mean": 6.114685421523012
+    },
+    "Smart Adaptive ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.19884970239703825,
+      "final_error_std": 4.1459741241769045e-05,
+      "stability_mean": 2.3163966976253723e-05,
+      "trapped_count_mean": 7.0,
+      "exploration_eff_mean": 1.016293834825632
+    },
+    "Conservative ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.19881478893898136,
+      "final_error_std": 2.9599025545300435e-05,
+      "stability_mean": 1.1016371710863615e-05,
+      "trapped_count_mean": 7.0,
+      "exploration_eff_mean": 12.237386705121967
+    },
+    "Aggressive ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.19886926627233895,
+      "final_error_std": 9.666357374616724e-05,
+      "stability_mean": 5.7657066117316775e-05,
+      "trapped_count_mean": 7.0,
+      "exploration_eff_mean": 3.0504950434056672
+    }
+  },
+  "rugged": {
+    "Base ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.3004803016218066,
+      "final_error_std": 0.0013541013919983057,
+      "stability_mean": 9.117303197492332e-05,
+      "trapped_count_mean": 4.0,
+      "exploration_eff_mean": -0.48612632619186275
+    },
+    "Smart Adaptive ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.29985805913382385,
+      "final_error_std": 0.0009369493619026921,
+      "stability_mean": 0.0001244710867797712,
+      "trapped_count_mean": 4.0,
+      "exploration_eff_mean": -0.06770755276116235
+    },
+    "Conservative ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.300489082562988,
+      "final_error_std": 0.0005696217065954963,
+      "stability_mean": 5.182512761766154e-05,
+      "trapped_count_mean": 5.8,
+      "exploration_eff_mean": -0.9083250024572159
+    },
+    "Aggressive ESC": {
+      "convergence_time_mean": 500.0,
+      "convergence_time_std": 0.0,
+      "final_error_mean": 0.2998669904273833,
+      "final_error_std": 0.0017603092528158998,
+      "stability_mean": 0.0002196473836216355,
+      "trapped_count_mean": 4.2,
+      "exploration_eff_mean": -0.23650287007965182
+    }
+  }
+}
