@@ -19,11 +19,11 @@ CONFIG_NAME = "balance_ippo_config"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/balance_ippo/"
 
 # Training parameters
-MAX_FRAMES = 600_000
-CHECKPOINT_INTERVAL = 600_000
+MAX_FRAMES = 6_000_000
+CHECKPOINT_INTERVAL = 6_000_000
 
 # Initial SND (will be overridden by ESC config if provided)
-DESIRED_SND = 0.0
+DESIRED_SND = -1.0
 
 # Task-specific overrides (optional)
 TASK_OVERRIDES = {
@@ -41,6 +41,8 @@ ESC_OVERRIDES = {
     "initial_snd": DESIRED_SND,
     # "dither_magnitude": 0.2,
 }
+
+USE_HIERARCHICAL = True
 
 # =============================================================================
 # RUN EXPERIMENT
@@ -87,5 +89,6 @@ if __name__ == "__main__":
         desired_snd=DESIRED_SND,
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
-        use_esc=USE_ESC
+        use_esc=USE_ESC,
+        use_hierarchical=USE_HIERARCHICAL
     )

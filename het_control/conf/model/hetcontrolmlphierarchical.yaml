@@ -1,0 +1,80 @@
+# Model name (matches the registry key in run.py)
+name: hetcontrolmlphierarchical
+
+# List of layers in the MLP. Shared across all hierarchical levels.
+num_cells: [256, 256]
+
+# Activation class between MLP layers.
+activation_class: torch.nn.Tanh
+
+# =============================================================================
+# Hierarchical Subteam Parameters
+# =============================================================================
+
+# Number of behavioral clusters/subteams (K)
+# Typically 2-4 works well. Higher values = more fine-grained clustering
+n_subteams: 3
+
+# Temperature for soft subteam assignment. 
+# Lower values (e.g., 0.01) make assignments "harder" (closer to one-hot).
+# Higher values (e.g., 1.0) make assignments "softer" (more distributed).
+subteam_tau: 0.1
+
+# If True, uses argmax for subteam assignment instead of softmax mixture.
+# Hard assignment: better for interpretability, worse for gradient flow
+# Soft assignment: better for learning, harder to interpret
+use_hard_assignment: false
+
+# =============================================================================
+# Hierarchical Weight Initializations (Learnable Parameters)
+# =============================================================================
+
+# Initial contribution of the team-wide shared baseline
+# Recommended: 1.0 (provides stable foundation)
+shared_weight_init: 1.0
+
+# Initial contribution of the subteam cluster logic (scaled by DiCo)
+# Recommended: 0.3-0.5 (medium contribution)
+subteam_weight_init: 0.5
+
+# Initial contribution of the individual agent logic (scaled by DiCo)
+# Recommended: 0.1-0.3 (smallest contribution for fine-tuning)
+agent_weight_init: 0.25
+
+# =============================================================================
+# Weight Processing Options
+# =============================================================================
+
+# If True, normalize weights to sum to 1 (makes them interpretable as mixing coefficients)
+normalize_weights: false
+
+# If True, clip weights to be non-negative (prevents negative contributions)
+clip_weights: true
+
+# =============================================================================
+# Diversity (DiCo) Parameters
+# =============================================================================
+
+# The desired SND diversity (SND_des)
+# Set by ESC controller or directly. null means it will be set at runtime.
+desired_snd: null
+
+# The soft-update parameter of the estimated diversity. Must be between 0 and 1
+# Lower = slower adaptation, Higher = faster adaptation
+tau: 0.01
+
+# Whether on the first iteration the estimated SND should be bootstrapped 
+# from the desired snd (True) or from the measured SND (False)
+bootstrap_from_desired_snd: true
+
+# =============================================================================
+# Policy Processing (BenchMARL dynamic parameters)
+# =============================================================================
+
+# Whether to process the homogeneous part with a tanh squashing operation
+# to the action space domain
+process_shared: true
+
+# Parameters filled dynamically. Do not change.
+probabilistic: null
+scale_mapping: null

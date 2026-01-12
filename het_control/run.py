@@ -1,6 +1,7 @@
 """
 Reusable experiment runner for BenchMARL with ESC control.
 Handles all common functionality across different tasks.
+Updated with logger monkey patch for hierarchical models.
 """
 import sys
 import hydra
@@ -31,28 +32,143 @@ from het_control.callbacks.callback import (
 from het_control.callbacks.esc_callback import ESCCallback
 from het_control.callbacks.sndESLogger import TrajectorySNDLoggerCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
+from het_control.callbacks.subteam_assignment_logger import SubteamAssignmentLoggerCallback
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
+from het_control.models.het_control_mlp_hierarchical import HetControlMlpHierarchicalConfig 
+
+
+def patch_benchmarl_logger():
+    """
+    Apply monkey patch to fix batch size mismatch issues in logger.
+    This is necessary for hierarchical models with minibatches of different sizes.
+    """
+    import torch
+    from tensordict import TensorDictBase
+    from tensordict._lazy import LazyStackedTensorDict
+    from benchmarl.experiment.logger import Logger
+    
+    def patched_log_training(self, group: str, training_td: TensorDictBase, step: int):
+        """
+        Patched version that handles LazyStackedTensorDict with mismatched batch sizes.
+        
+        Instead of using .get() which triggers stacking, we manually extract from
+        the underlying tensordicts and compute statistics.
+        """
+        if not len(self.loggers):
+            return
+        
+        to_log = {}
+        
+        # Check if this is a LazyStackedTensorDict (which causes issues with mismatched batches)
+        if isinstance(training_td, LazyStackedTensorDict):
+            # Get the list of underlying tensordicts
+            try:
+                # Access the internal list of tensordicts
+                tensordicts = training_td.tensordicts
+            except AttributeError:
+                # Fallback: try to get keys and process individually
+                try:
+                    keys = list(training_td.keys())
+                except RuntimeError:
+                    # Can't even get keys, skip logging
+                    return
+                
+                # Try to extract each key without triggering stacking
+                for key in keys:
+                    try:
+                        # Use get_nestedtensor which doesn't stack
+                        nested_value = training_td.get_nestedtensor(key)
+                        # nested_value is a NestedTensor - compute mean across all elements
+                        if hasattr(nested_value, 'values'):
+                            # For NestedTensor
+                            values = [v.mean().item() for v in nested_value.values()]
+                            to_log[f"train/{group}/{key}"] = sum(values) / len(values)
+                        else:
+                            # Regular tensor
+                            to_log[f"train/{group}/{key}"] = nested_value.mean().item()
+                    except (RuntimeError, AttributeError, KeyError):
+                        # Skip keys that can't be accessed
+                        continue
+                
+                if to_log:
+                    self.log(to_log, step=step)
+                return
+            
+            # If we successfully got tensordicts, process them manually
+            all_values = {}
+            for td in tensordicts:
+                try:
+                    for key in td.keys():
+                        value = td.get(key)
+                        if isinstance(value, torch.Tensor):
+                            if key not in all_values:
+                                all_values[key] = []
+                            all_values[key].append(value.mean().item())
+                except (RuntimeError, AttributeError):
+                    continue
+            
+            # Average across all tensordicts
+            for key, values in all_values.items():
+                if values:
+                    to_log[f"train/{group}/{key}"] = sum(values) / len(values)
+        
+        else:
+            # Not a LazyStackedTensorDict - use normal processing
+            try:
+                keys = list(training_td.keys())
+            except RuntimeError:
+                return
+            
+            for key in keys:
+                try:
+                    value = training_td.get(key)
+                    if isinstance(value, torch.Tensor):
+                        to_log[f"train/{group}/{key}"] = value.mean().item()
+                    else:
+                        try:
+                            to_log[f"train/{group}/{key}"] = value.mean().item()
+                        except (RuntimeError, AttributeError):
+                            pass
+                except RuntimeError:
+                    continue
+        
+        if to_log:
+            self.log(to_log, step=step)
+    
+    Logger.log_training = patched_log_training
+    print("✅ Applied logger monkey patch for hierarchical model compatibility")
 
 
 def setup(task_name: str) -> None:
     """Register custom models and setup task-specific configurations."""
     benchmarl.models.model_config_registry.update({
         "hetcontrolmlpempirical": HetControlMlpEmpiricalConfig,
+        "hetcontrolmlphierarchical": HetControlMlpHierarchicalConfig,
     })
     
     # Task-specific render callbacks
-    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire","vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", "vmas/reverse_transport","vmas/sampling","vmas/tag"]:
+    if task_name in [
+        "vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", 
+        "vmas/buzz_wire", "vmas/discovery", "vmas/dispersion", 
+        "vmas/football", "vmas/navigation", "vmas/reverse_transport",
+        "vmas/sampling", "vmas/tag"
+    ]:
         VmasTask.render_callback = render_callback
 
 
-def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None) -> Experiment:
+def get_experiment(
+    cfg: DictConfig, 
+    esc_config: Optional[Dict[str, Any]] = None,
+    use_hierarchical: bool = False
+) -> Experiment:
     """
     Create and configure the BenchMARL experiment with all callbacks.
     
     Args:
         cfg: Hydra configuration dictionary
         esc_config: ESC controller configuration dictionary (optional)
+        use_hierarchical: Whether using hierarchical model (for callback selection)
         
     Returns:
         Configured Experiment object
@@ -62,6 +178,10 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
     algorithm_name = hydra_choices.algorithm
     
     setup(task_name)
+    
+    # Apply logger patch for hierarchical models
+    if use_hierarchical:
+        patch_benchmarl_logger()
     
     print(f"\nAlgorithm: {algorithm_name}, Task: {task_name}")
     print("\nLoaded config:\n")
@@ -132,6 +252,17 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
             )
         )
     
+    # Add subteam assignment logger for hierarchical models
+    if use_hierarchical:
+        control_group = esc_config.get("control_group", "agents") if esc_config else "agents"
+        log_interval = esc_config.get("subteam_log_interval", 10) if esc_config else 10
+        callbacks.append(
+            SubteamAssignmentLoggerCallback(
+                control_group=control_group,
+                log_interval=log_interval
+            )
+        )
+    
     # Always add SND visualizer
     callbacks.append(SNDVisualizerCallback())
     
@@ -175,7 +306,8 @@ def run_experiment(
     desired_snd: float = 0.0,
     task_overrides: Optional[Dict[str, Any]] = None,
     esc_config_path: Optional[str] = None,
-    use_esc: bool = True
+    use_esc: bool = True,
+    use_hierarchical: bool = False
 ):
     """
     Run the experiment with specified configuration.
@@ -190,6 +322,7 @@ def run_experiment(
         task_overrides: Dictionary of task parameter overrides
         esc_config_path: Path to ESC configuration YAML (optional)
         use_esc: Whether to use ESC controller
+        use_hierarchical: Whether to use hierarchical model
     """
     # Load ESC configuration if provided
     esc_config = None
@@ -214,6 +347,12 @@ def run_experiment(
     # Build command-line arguments for Hydra
     sys.argv = ["dummy.py"]
     
+    # Select model type
+    if use_hierarchical:
+        sys.argv.append("model=hetcontrolmlphierarchical")
+    else:
+        sys.argv.append("model=hetcontrolmlpempirical")
+    
     # Add experiment configuration
     sys.argv.extend([
         f"experiment.max_n_frames={max_frames}",
@@ -224,28 +363,52 @@ def run_experiment(
     # Set model.desired_snd (required for model initialization)
     sys.argv.append(f"model.desired_snd={desired_snd}")
     
+    # Add hierarchical-specific parameters
+    if use_hierarchical:
+        n_subteams = esc_config.get("n_subteams", 3) if esc_config else 3
+        subteam_tau = esc_config.get("subteam_tau", 0.1) if esc_config else 0.1
+        use_hard = esc_config.get('use_hard_assignment', False) if esc_config else False
+        normalize_w = esc_config.get('normalize_weights', False) if esc_config else False
+        clip_w = esc_config.get('clip_weights', True) if esc_config else True
+        
+        sys.argv.append(f"model.n_subteams={n_subteams}")
+        sys.argv.append(f"model.subteam_tau={subteam_tau}")
+        sys.argv.append(f"model.use_hard_assignment={str(use_hard).lower()}")
+        sys.argv.append(f"model.normalize_weights={str(normalize_w).lower()}")
+        sys.argv.append(f"model.clip_weights={str(clip_w).lower()}")
+        
+        # Initial Weights
+        shared_w = esc_config.get('shared_weight_init', 1.0) if esc_config else 1.0
+        subteam_w = esc_config.get('subteam_weight_init', 0.5) if esc_config else 0.5
+        agent_w = esc_config.get('agent_weight_init', 0.25) if esc_config else 0.25
+        
+        sys.argv.append(f"model.shared_weight_init={shared_w}")
+        sys.argv.append(f"model.subteam_weight_init={subteam_w}")
+        sys.argv.append(f"model.agent_weight_init={agent_w}")
+    
     # Add ESC parameters if using ESC
     if use_esc and esc_config is not None:
         # Add new ESC parameters with + prefix (directly from loaded config)
         esc_params_to_add = {
             "initial_snd": esc_config.get('initial_snd', 0.0),
-            "esc_dither_magnitude": esc_config.get('dither_magnitude', 0.2),
-            "esc_dither_frequency": esc_config.get('dither_frequency', 1.0),
-            "esc_integrator_gain": esc_config.get('integrator_gain', -0.001),
-            "esc_high_pass_cutoff": esc_config.get('high_pass_cutoff', 0.5),
-            "esc_low_pass_cutoff": esc_config.get('low_pass_cutoff', 0.1),
-            "esc_use_adaptive_gain": esc_config.get('use_adaptive_gain', True),
-            "esc_sampling_period": esc_config.get('sampling_period', 1.0),
-            "esc_min_snd": esc_config.get('min_snd', 0.0),
-            "esc_max_snd": esc_config.get('max_snd', 3.0),
+            "dither_magnitude": esc_config.get('dither_magnitude', 0.2),
+            "dither_frequency": esc_config.get('dither_frequency', 1.0),
+            "integrator_gain": esc_config.get('integrator_gain', -0.001),
+            "high_pass_cutoff": esc_config.get('high_pass_cutoff', 0.5),
+            "low_pass_cutoff": esc_config.get('low_pass_cutoff', 0.1),
+            "use_adaptive_gain": str(esc_config.get('use_adaptive_gain', True)).lower(),
+            "sampling_period": esc_config.get('sampling_period', 1.0),
+            "min_snd": esc_config.get('min_snd', 0.0),
+            "max_snd": esc_config.get('max_snd', 3.0),
         }
         
         for param, value in esc_params_to_add.items():
             sys.argv.append(f"+{param}={value}")
         
         # Override existing parameters
+        use_action_loss = esc_config.get('use_action_loss', False)
         esc_override_params = {
-            "use_action_loss": esc_config.get('use_action_loss', False),
+            "use_action_loss": str(use_action_loss).lower(),
             "action_loss_lr": esc_config.get('action_loss_lr', 0.001),
         }
         
@@ -267,6 +430,16 @@ def run_experiment(
     print(f"Max frames: {max_frames:,}")
     print(f"Checkpoint interval: {checkpoint_interval:,}")
     print(f"Desired SND: {desired_snd}")
+    print(f"Model type: {'Hierarchical' if use_hierarchical else 'Empirical'}")
+    
+    if use_hierarchical:
+        print(f"\n🏗️  Hierarchical Model Configuration:")
+        print(f"  Subteams: {n_subteams}")
+        print(f"  Subteam tau: {subteam_tau}")
+        print(f"  Hard assignment: {use_hard}")
+        print(f"  Normalize weights: {normalize_w}")
+        print(f"  Clip weights: {clip_w}")
+        print(f"  Weights (shared/subteam/agent): {shared_w}/{subteam_w}/{agent_w}")
     
     if use_esc and esc_config:
         print(f"\n🎛️  ESC Controller: ENABLED")
@@ -293,7 +466,11 @@ def run_experiment(
         config_name=config_name
     )
     def hydra_experiment(cfg: DictConfig) -> None:
-        experiment = get_experiment(cfg=cfg, esc_config=esc_config if use_esc else None)
+        experiment = get_experiment(
+            cfg=cfg, 
+            esc_config=esc_config if use_esc else None,
+            use_hierarchical=use_hierarchical
+        )
         experiment.run()
     
     # Execute experiment

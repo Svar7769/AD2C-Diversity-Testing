@@ -46,13 +46,15 @@ class HetControlMlpHierarchical(Model):
         subteam_weight_init: float,
         agent_weight_init: float,
         use_hard_assignment: bool,
+        normalize_weights: bool = False,
+        clip_weights: bool = True,
         **kwargs,
     ):
         """Three-part hierarchical DiCo policy model.
         
         Args:
             activation_class (Type[nn.Module]): activation class to be used.
-            num_cells (int or Sequence[int], optional): number of cells of every layer in between the input and output.
+            num_cells (int or Sequence[int]): number of cells of every layer in between the input and output.
             n_subteams (int): Number of behavioral subteam clusters (typically 2-4).
             desired_snd (float): The desired SND diversity.
             probabilistic (bool): Whether the model has stochastic actions or not.
@@ -67,9 +69,10 @@ class HetControlMlpHierarchical(Model):
             subteam_weight_init (float): Initial weight for subteam component contribution.
             agent_weight_init (float): Initial weight for agent-specific component contribution.
             use_hard_assignment (bool): If True, use hard (argmax) subteam assignment instead of soft (softmax).
+            normalize_weights (bool): If True, normalize hierarchical weights to sum to 1.
+            clip_weights (bool): If True, clip hierarchical weights to be non-negative.
         """
-        super().__init__(**kwargs)
-
+        # Store attributes BEFORE calling super().__init__() because _perform_checks() needs them
         self.num_cells = num_cells
         self.activation_class = activation_class
         self.probabilistic = probabilistic
@@ -80,6 +83,11 @@ class HetControlMlpHierarchical(Model):
         self.process_shared = process_shared
         self.n_subteams = n_subteams
         self.use_hard_assignment = use_hard_assignment
+        self.normalize_weights = normalize_weights
+        self.clip_weights = clip_weights
+        
+        # Now call parent init which will trigger _perform_checks()
+        super().__init__(**kwargs)
 
         # Diversity tracking buffers
         self.register_buffer(
@@ -134,6 +142,7 @@ class HetControlMlpHierarchical(Model):
         ])
         
         # Subteam assignment network (learns behavioral clustering)
+        # This is shared across all agents to learn global clustering patterns
         self.assignment_network = nn.Sequential(
             nn.Linear(self.input_features, self.num_cells[0], device=self.device),
             self.activation_class(),
@@ -195,6 +204,30 @@ class HetControlMlpHierarchical(Model):
         
         if self.subteam_tau <= 0:
             raise ValueError(f"subteam_tau must be positive, got {self.subteam_tau}")
+        
+        if len(self.num_cells) == 0:
+            raise ValueError(f"num_cells must contain at least one element, got {self.num_cells}")
+
+    def get_hierarchical_weights(self):
+        """Get the current hierarchical weights (optionally normalized or clipped)."""
+        shared_w = self.shared_weight
+        subteam_w = self.subteam_weight
+        agent_w = self.agent_weight
+        
+        # Clip weights to be non-negative if enabled
+        if self.clip_weights:
+            shared_w = torch.clamp(shared_w, min=0.0)
+            subteam_w = torch.clamp(subteam_w, min=0.0)
+            agent_w = torch.clamp(agent_w, min=0.0)
+        
+        # Normalize weights to sum to 1 if enabled
+        if self.normalize_weights:
+            total_weight = shared_w + subteam_w + agent_w + 1e-8  # Add epsilon for stability
+            shared_w = shared_w / total_weight
+            subteam_w = subteam_w / total_weight
+            agent_w = agent_w / total_weight
+        
+        return shared_w, subteam_w, agent_w
 
     def compute_subteam_assignment(
         self, 
@@ -232,7 +265,12 @@ class HetControlMlpHierarchical(Model):
         update_estimate: bool = True,
         compute_estimate: bool = True,
     ) -> TensorDictBase:
-        """Forward pass with three-part hierarchical composition."""
+        """Forward pass with three-part hierarchical composition.
+        
+        CRITICAL: This method must NOT add any keys to the tensordict except self.out_key.
+        Adding other keys causes batch size mismatches during training when minibatches
+        have different sizes (e.g., 4096 vs 2656).
+        """
         
         # Gather input
         input = tensordict.get(self.in_key)  # [*batch, n_agents, n_features]
@@ -305,20 +343,18 @@ class HetControlMlpHierarchical(Model):
             )
         
         # ========== HIERARCHICAL COMPOSITION ==========
+        # Get potentially normalized/clipped weights
+        shared_weight, subteam_weight, agent_weight = self.get_hierarchical_weights()
+        
         if self.probabilistic:
             shared_loc, shared_scale = shared_out.chunk(2, -1)
             
             # Combine: weighted_shared + weighted_subteam + weighted_agent
             # Only subteam and agent components are scaled by diversity
             agent_loc = (
-                self.shared_weight * shared_loc +
-                self.subteam_weight * subteam_out * scaling_ratio +
-                self.agent_weight * agent_out * scaling_ratio
-            )
-            
-            # Compute overflow norm for logging
-            out_loc_norm = overflowing_logits_norm(
-                agent_loc, self.action_spec[self.agent_group, "action"]
+                shared_weight * shared_loc +
+                subteam_weight * subteam_out * scaling_ratio +
+                agent_weight * agent_out * scaling_ratio
             )
             
             # Use shared scale for all components
@@ -327,49 +363,17 @@ class HetControlMlpHierarchical(Model):
         else:
             # Deterministic case
             out = (
-                self.shared_weight * shared_out +
-                self.subteam_weight * subteam_out * scaling_ratio +
-                self.agent_weight * agent_out * scaling_ratio
-            )
-            out_loc_norm = overflowing_logits_norm(
-                out, self.action_spec[self.agent_group, "action"]
+                shared_weight * shared_out +
+                subteam_weight * subteam_out * scaling_ratio +
+                agent_weight * agent_out * scaling_ratio
             )
         
-        # ========== STORE DIAGNOSTICS IN TENSORDICT ==========
-        tensordict.set(
-            (self.agent_group, "subteam_assignments"),
-            subteam_assignments,
-        )
-        tensordict.set(
-            (self.agent_group, "estimated_snd"),
-            self.estimated_snd.expand(tensordict.get_item_shape(self.agent_group)),
-        )
-        tensordict.set(
-            (self.agent_group, "scaling_ratio"),
-            (
-                torch.tensor(scaling_ratio, device=self.device).expand_as(out)
-                if not isinstance(scaling_ratio, torch.Tensor)
-                else scaling_ratio.expand_as(out)
-            ),
-        )
-        tensordict.set((self.agent_group, "logits"), out)
-        tensordict.set((self.agent_group, "out_loc_norm"), out_loc_norm)
-        
-        # Store hierarchical weights for monitoring
-        tensordict.set(
-            (self.agent_group, "shared_weight"),
-            self.shared_weight.expand(tensordict.get_item_shape(self.agent_group)),
-        )
-        tensordict.set(
-            (self.agent_group, "subteam_weight"),
-            self.subteam_weight.expand(tensordict.get_item_shape(self.agent_group)),
-        )
-        tensordict.set(
-            (self.agent_group, "agent_weight"),
-            self.agent_weight.expand(tensordict.get_item_shape(self.agent_group)),
-        )
-
+        # ========== STORE OUTPUT IN TENSORDICT ==========
+        # CRITICAL: Only set self.out_key - do NOT add any other keys!
+        # Any additional keys will cause batch size mismatch errors during training
+        # when minibatches have different sizes (e.g., 4096 vs 2656 for 60000/4096).
         tensordict.set(self.out_key, out)
+        
         return tensordict
 
     def process_shared_out(self, logits: torch.Tensor):
@@ -420,28 +424,29 @@ class HetControlMlpHierarchical(Model):
 class HetControlMlpHierarchicalConfig(ModelConfig):
     """Configuration for three-part hierarchical heterogeneous control model."""
     
+    # Required parameters (MISSING = must be set)
     activation_class: Type[nn.Module] = MISSING
     num_cells: Sequence[int] = MISSING
-    
-    # Subteam clustering parameters
-    n_subteams: int = 3
-    subteam_tau: float = 0.1
-    use_hard_assignment: bool = False
-    
-    # Diversity parameters
     desired_snd: float = MISSING
     tau: float = MISSING
     bootstrap_from_desired_snd: bool = MISSING
-    
-    # Architecture parameters
     process_shared: bool = MISSING
     probabilistic: Optional[bool] = MISSING
     scale_mapping: Optional[str] = MISSING
     
-    # Hierarchical composition weights
+    # Subteam clustering parameters (with defaults)
+    n_subteams: int = 3
+    subteam_tau: float = 0.1
+    use_hard_assignment: bool = False
+    
+    # Hierarchical composition weights (with defaults)
     shared_weight_init: float = 1.0
     subteam_weight_init: float = 0.5
     agent_weight_init: float = 0.25
+    
+    # Weight processing options (with defaults)
+    normalize_weights: bool = False
+    clip_weights: bool = True
 
     @staticmethod
     def associated_class():
