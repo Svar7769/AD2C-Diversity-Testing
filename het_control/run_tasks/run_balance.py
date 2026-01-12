@@ -19,8 +19,8 @@ CONFIG_NAME = "balance_ippo_config"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/balance_ippo/"
 
 # Training parameters
-MAX_FRAMES = 1_200_000
-CHECKPOINT_INTERVAL = 1_200_000
+MAX_FRAMES = 600_000
+CHECKPOINT_INTERVAL = 600_000
 
 # Initial SND (will be overridden by ESC config if provided)
 DESIRED_SND = 0.0
