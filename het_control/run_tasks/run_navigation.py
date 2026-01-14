@@ -83,7 +83,7 @@ if __name__ == "__main__":
         save_path=SAVE_PATH,
         max_frames=MAX_FRAMES,
         checkpoint_interval=CHECKPOINT_INTERVAL,
-        desired_snd=DESIRED_SND,
+        # desired_snd=DESIRED_SND,
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
         use_esc=USE_ESC
