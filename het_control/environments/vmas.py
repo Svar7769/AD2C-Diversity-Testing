@@ -7,6 +7,9 @@ import torch
 from tensordict import TensorDictBase, TensorDict
 from torchrl.envs import EnvBase
 
+import matplotlib
+matplotlib.use('Agg')
+
 from het_control.callbacks.callback import get_het_model
 from het_control.callbacks.snd import compute_behavioral_distance
 

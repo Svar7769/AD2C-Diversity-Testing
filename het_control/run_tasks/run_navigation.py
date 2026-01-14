@@ -11,28 +11,28 @@ import os
 # =============================================================================
 
 # Base directory for the project
-BASE_DIR = "/home/svarp/Desktop/Projects/ad2c - testEnv/AD2C-Diversity-Testing"
+BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
 
 # Paths
 ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "navigation_ippo"
-SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/navigation_ippo/"
+SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/navigation_ippo/"
 
 # Training parameters
-MAX_FRAMES = 1_200_000
-CHECKPOINT_INTERVAL = 1_200_000
+MAX_FRAMES = 12_000_000
+CHECKPOINT_INTERVAL = 12_000_000
 
 # Initial SND
 DESIRED_SND = -1.0
 
 # Task-specific overrides
 TASK_OVERRIDES = {
-    "n_agents": 2,
-    "agents_with_same_goal": 1,
+    "n_agents": 3,
+    "agents_with_same_goal": 3,
 }
 
 # ESC Controller Configuration
-USE_ESC = True  # Set to False to disable ESC
+USE_ESC = False  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Specific overrides for this task
