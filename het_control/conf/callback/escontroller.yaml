@@ -1,35 +1,47 @@
 # ESC Controller Configuration
-# This file contains ONLY ESC-specific parameters
-# Task configs, paths, and training params go in the runner scripts
-
+# This config uses the improved ESC implementation with backward-compatible names
 esc_controller:
-  # Control group: "agents" or "adversary"
+  # Basic ESC parameters
   control_group: "agents"
-  
-  # Initial SND value
   initial_snd: 0.0
   
-  # Dither signal parameters
-  dither_magnitude: 0.2      # Amplitude of dither signal
-  dither_frequency: 1.0      # Frequency in rad/s
+  # Perturbation parameters
+  dither_magnitude: 0.2       # Amplitude of dither signal
+  dither_frequency: 1.0       # Frequency in rad/s (ω)
   
-  # Controller gains and filters
-  integrator_gain: -0.01    # Integrator gain (negative for minimization)
-  high_pass_cutoff: 0.5      # High-pass filter cutoff in rad/s
-  low_pass_cutoff: 0.1       # Low-pass filter cutoff in rad/s
+  # Filter parameters (FIXED: proper frequency ordering)
+  # Classical theory requires: ωh < ωl < ω
+  # Your old config had: ωh=0.5 > ωl=0.1 (WRONG!)
+  high_pass_cutoff: 0.05      # rad/s (ωh) - slowest, must be < low_pass
+  low_pass_cutoff: 0.5        # rad/s (ωl) - medium, must be > high_pass and < dither
   
-  # Adaptive control
-  use_adaptive_gain: true    # Enable adaptive gain control
-  sampling_period: 1.0       # Sampling period in seconds
+  # Integration parameters
+  integrator_gain: -0.01      # Negative for gradient descent (maximizing reward)
+  sampling_period: 1.0        # seconds
   
-  # SND constraints
-  min_snd: 0.0               # Minimum allowed SND value
-  max_snd: 3.0               # Maximum allowed SND value
+  # Output bounds
+  min_snd: 0.0
+  max_snd: 3.0
   
-  # Action space loss parameters
-  use_action_loss: false     # Enable action space loss
-  action_loss_lr: 0.001      # Learning rate for action loss
+  # Adaptive features (matching your current config)
+  use_adaptive_gain: true          # You had this enabled
+  use_adaptive_dither: false       # Classical dither (new option)
   
-  # Task-specific parameters (optional)
+  # Adaptive gain parameters (only used if use_adaptive_gain=true)
+  gain_adaptation_mode: "rmsprop"  # Options: "rmsprop", "binary", "gradient_norm"
+  binary_gain_threshold: 0.2
+  binary_high_gain_multiplier: 2.5
+  
+  # Adaptive dither parameters (only used if use_adaptive_dither=true)
+  dither_decay_rate: 0.999
+  min_dither_ratio: 0.1
+  dither_boost_threshold: 0.01
+  dither_boost_rate: 1.02
+  
+  # Action loss parameters
+  use_action_loss: false
+  action_loss_lr: 0.001
+  
+  # Task-specific parameters (optional, from your config)
   simple_tag_freeze_policy: false
   simple_tag_freeze_policy_after_frames: 1000000

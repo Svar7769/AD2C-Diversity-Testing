@@ -23,7 +23,7 @@ MAX_FRAMES = 6_000_000
 CHECKPOINT_INTERVAL = 6_000_000
 
 # Initial SND (will be overridden by ESC config if provided)
-DESIRED_SND = 0.0
+DESIRED_SND = -1.0
 
 # Task-specific overrides (optional)
 TASK_OVERRIDES = {
@@ -32,7 +32,7 @@ TASK_OVERRIDES = {
 }
 
 # ESC Controller Configuration
-USE_ESC = True  # Set to False to disable ESC
+USE_ESC = False  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # ESC parameter overrides

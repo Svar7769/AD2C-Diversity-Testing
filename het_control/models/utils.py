@@ -2,7 +2,7 @@
 #  ProrokLab (https://www.proroklab.org/)
 #  All rights reserved.
 import torch
-from torch import nn
+# from torch import nn
 import numpy as np
 from het_control.callbacks.utils import clamp_preserve_gradients
 

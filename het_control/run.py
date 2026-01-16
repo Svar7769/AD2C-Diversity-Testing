@@ -1,6 +1,7 @@
 """
-Reusable experiment runner for BenchMARL with ESC control.
+Reusable experiment runner for BenchMARL with improved ESC control.
 Handles all common functionality across different tasks.
+Updated to support improved ESC implementation with proper parameter names.
 """
 import sys
 import hydra
@@ -28,7 +29,11 @@ from het_control.callbacks.callback import (
     ActionSpaceLoss,
     TagCurriculum
 )
-from het_control.callbacks.esc_callback import ESCCallback
+# Old ESC implementation (kept for backward compatibility)
+# from het_control.callbacks.esc_callback_old import ESCCallback as OldESCCallback
+
+# New adaptive ESC implementation (default)
+from het_control.callbacks.adaptiveEsc_callback import AdaptiveESCCallback
 from het_control.callbacks.sndESLogger import TrajectorySNDLoggerCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
 from het_control.environments.vmas import render_callback
@@ -43,7 +48,9 @@ def setup(task_name: str) -> None:
     })
     
     # Task-specific render callbacks
-    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire","vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", "vmas/reverse_transport","vmas/sampling","vmas/tag"]:
+    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire",
+                     "vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", 
+                     "vmas/reverse_transport", "vmas/sampling", "vmas/tag"]:
         VmasTask.render_callback = render_callback
 
 
@@ -97,20 +104,48 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
         if hasattr(model_config, 'desired_snd'):
             model_config.desired_snd = esc_config.get("initial_snd", 0.0)
         
-        # Add ESC controller
+        # Add ESC controller (using new adaptive implementation)
+        # Old ESC implementation (commented out):
+        # callbacks.append(
+        #     OldESCCallback(
+        #         control_group=control_group,
+        #         initial_snd=esc_config.get("initial_snd", 0.0),
+        #         dither_magnitude=esc_config.get("dither_magnitude", 0.1),
+        #         dither_frequency_rad_s=esc_config.get("dither_frequency", 0.5),
+        #         integrator_gain=esc_config.get("integrator_gain", -0.01),
+        #         high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.01),
+        #         low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
+        #         use_adaptive_gain=esc_config.get("use_adaptive_gain", False),
+        #         sampling_period=esc_config.get("sampling_period", 1.0),
+        #         min_snd=esc_config.get("min_snd", 0.0),
+        #         max_snd=esc_config.get("max_snd", 3.0)
+        #     )
+        # )
+        
+        # New Adaptive ESC implementation:
         callbacks.append(
-            ESCCallback(
+            AdaptiveESCCallback(
                 control_group=control_group,
                 initial_snd=esc_config.get("initial_snd", 0.0),
-                dither_magnitude=esc_config.get("dither_magnitude", 0.2),
-                dither_frequency_rad_s=esc_config.get("dither_frequency", 1.0),
-                integrator_gain=esc_config.get("integrator_gain", -0.001),
-                high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.5),
+                dither_magnitude=esc_config.get("dither_magnitude", 0.1),
+                dither_frequency_rad_s=esc_config.get("dither_frequency", 0.5),
+                integrator_gain=esc_config.get("integrator_gain", -0.01),
+                high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.01),
                 low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
-                use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
+                use_adaptive_gain=esc_config.get("use_adaptive_gain", False),
+                use_adaptive_dither=esc_config.get("use_adaptive_dither", False),
                 sampling_period=esc_config.get("sampling_period", 1.0),
                 min_snd=esc_config.get("min_snd", 0.0),
-                max_snd=esc_config.get("max_snd", 3.0)
+                max_snd=esc_config.get("max_snd", 3.0),
+                # Adaptive gain parameters
+                gain_adaptation_mode=esc_config.get("gain_adaptation_mode", "rmsprop"),
+                binary_gain_threshold=esc_config.get("binary_gain_threshold", 0.2),
+                binary_high_gain_multiplier=esc_config.get("binary_high_gain_multiplier", 2.5),
+                # Adaptive dither parameters
+                dither_decay_rate=esc_config.get("dither_decay_rate", 0.999),
+                min_dither_ratio=esc_config.get("min_dither_ratio", 0.1),
+                dither_boost_threshold=esc_config.get("dither_boost_threshold", 0.01),
+                dither_boost_rate=esc_config.get("dither_boost_rate", 1.02),
             )
 
             # SmartESCCallback(
@@ -134,7 +169,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
         )
         
         # Add ESC trajectory logger
-        callbacks.append(TrajectorySNDLoggerCallback(control_group=control_group))
+        # callbacks.append(TrajectorySNDLoggerCallback(control_group=control_group))
         
         # Add action space loss
         callbacks.append(
@@ -247,17 +282,27 @@ def run_experiment(
     # Add ESC parameters if using ESC
     if use_esc and esc_config is not None:
         # Add new ESC parameters with + prefix (directly from loaded config)
+        # Using improved parameter names
         esc_params_to_add = {
             "initial_snd": esc_config.get('initial_snd', 0.0),
-            "esc_dither_magnitude": esc_config.get('dither_magnitude', 0.2),
-            "esc_dither_frequency": esc_config.get('dither_frequency', 1.0),
-            "esc_integrator_gain": esc_config.get('integrator_gain', -0.001),
-            "esc_high_pass_cutoff": esc_config.get('high_pass_cutoff', 0.5),
+            "esc_dither_magnitude": esc_config.get('dither_magnitude', 0.1),
+            "esc_dither_frequency": esc_config.get('dither_frequency', 0.5),
+            "esc_integrator_gain": esc_config.get('integrator_gain', -0.01),
+            "esc_high_pass_cutoff": esc_config.get('high_pass_cutoff', 0.01),
             "esc_low_pass_cutoff": esc_config.get('low_pass_cutoff', 0.1),
-            "esc_use_adaptive_gain": esc_config.get('use_adaptive_gain', True),
+            "esc_use_adaptive_gain": esc_config.get('use_adaptive_gain', False),
+            "esc_use_adaptive_dither": esc_config.get('use_adaptive_dither', False),
             "esc_sampling_period": esc_config.get('sampling_period', 1.0),
             "esc_min_snd": esc_config.get('min_snd', 0.0),
             "esc_max_snd": esc_config.get('max_snd', 3.0),
+            # Adaptive parameters
+            "esc_gain_adaptation_mode": esc_config.get('gain_adaptation_mode', 'rmsprop'),
+            "esc_binary_gain_threshold": esc_config.get('binary_gain_threshold', 0.2),
+            "esc_binary_high_gain_multiplier": esc_config.get('binary_high_gain_multiplier', 2.5),
+            "esc_dither_decay_rate": esc_config.get('dither_decay_rate', 0.999),
+            "esc_min_dither_ratio": esc_config.get('min_dither_ratio', 0.1),
+            "esc_dither_boost_threshold": esc_config.get('dither_boost_threshold', 0.01),
+            "esc_dither_boost_rate": esc_config.get('dither_boost_rate', 1.02),
         }
         
         for param, value in esc_params_to_add.items():
@@ -290,13 +335,25 @@ def run_experiment(
     
     if use_esc and esc_config:
         print(f"\n🎛️  ESC Controller: ENABLED")
-        print(f"Control group: {esc_config.get('control_group', 'agents')}")
-        print(f"  Dither: ±{esc_config.get('dither_magnitude', 0.2)} @ {esc_config.get('dither_frequency', 1.0)} rad/s")
-        print(f"  Integrator gain: {esc_config.get('integrator_gain', -0.001)}")
-        print(f"  HPF cutoff: {esc_config.get('high_pass_cutoff', 0.5)} rad/s")
-        print(f"  LPF cutoff: {esc_config.get('low_pass_cutoff', 0.1)} rad/s")
-        print(f"  Adaptive gain: {esc_config.get('use_adaptive_gain', True)}")
-        print(f"  SND bounds: [{esc_config.get('min_snd', 0.0)}, {esc_config.get('max_snd', 3.0)}]")
+        mode_desc = "Classical ESC"
+        if esc_config.get('use_adaptive_gain', False) or esc_config.get('use_adaptive_dither', False):
+            mode_desc = "Adaptive ESC ("
+            features = []
+            if esc_config.get('use_adaptive_gain', False):
+                features.append(f"{esc_config.get('gain_adaptation_mode', 'rmsprop')} gain")
+            if esc_config.get('use_adaptive_dither', False):
+                features.append("adaptive dither")
+            mode_desc += ", ".join(features) + ")"
+        
+        print(f"   Mode: {mode_desc}")
+        print(f"   Control group: {esc_config.get('control_group', 'agents')}")
+        print(f"   Initial SND: {esc_config.get('initial_snd', 0.0)}")
+        print(f"   Dither: ±{esc_config.get('dither_magnitude', 0.1)} @ {esc_config.get('dither_frequency', 0.5)} rad/s")
+        print(f"   Integrator gain: {esc_config.get('integrator_gain', -0.01)}")
+        print(f"   HPF cutoff: {esc_config.get('high_pass_cutoff', 0.01)} rad/s")
+        print(f"   LPF cutoff: {esc_config.get('low_pass_cutoff', 0.1)} rad/s")
+        print(f"   Frequency ordering: ωh < ωl < ω = {esc_config.get('high_pass_cutoff', 0.01)} < {esc_config.get('low_pass_cutoff', 0.1)} < {esc_config.get('dither_frequency', 0.5)}")
+        print(f"   SND bounds: [{esc_config.get('min_snd', 0.0)}, {esc_config.get('max_snd', 3.0)}]")
     else:
         print(f"\n🎛️  ESC Controller: DISABLED")
     
