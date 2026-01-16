@@ -36,7 +36,18 @@ ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 # Specific overrides for this task
 ESC_OVERRIDES = {
     "control_group": "agents",
-    "initial_snd": DESIRED_SND,
+    "initial_snd": 0.0,
+    "dither_magnitude": 0.2,      
+    "dither_frequency": 1.0,      
+    "high_pass_cutoff": 0.05,     
+    "low_pass_cutoff": 0.5,       
+    "integrator_gain": -10,     
+    "sampling_period": 1.0,       
+    "min_snd": 0.0,
+    "max_snd": 3.0,
+    "use_adaptive_gain": True,         
+    "gain_adaptation_mode": "rmsprop", 
+    "use_adaptive_dither": True,
 }
 
 # =============================================================================

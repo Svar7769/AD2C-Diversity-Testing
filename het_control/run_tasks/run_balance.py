@@ -23,7 +23,7 @@ MAX_FRAMES = 12_000_000
 CHECKPOINT_INTERVAL = 12_000_000
 
 # Initial SND (will be overridden by ESC config if provided)
-DESIRED_SND = 0.0
+DESIRED_SND = -1.0
 
 # Task-specific overrides (optional)
 TASK_OVERRIDES = {
