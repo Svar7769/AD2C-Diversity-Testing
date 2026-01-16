@@ -2,7 +2,7 @@
 # Run with different SND values and agents_with_same_goal configurations
 
 snd_values=(0.0)
-goal_values=(3 2 1)
+goal_values=(2 1)
 
 for snd in "${snd_values[@]}"; do
     for goals in "${goal_values[@]}"; do
