@@ -1,5 +1,6 @@
 """
 Callback for integrating Extremum Seeking Control with BenchMARL experiments.
+UPDATED VERSION - New log format matching adaptive ESC implementation.
 """
 from typing import List, Optional
 import torch
@@ -248,17 +249,20 @@ class AdaptiveESCCallback(Callback):
         setpoint_change = setpoint - previous_setpoint
         dither_change = self.controller.a - previous_dither
         
-        # Build console log message (NEW FORMAT - matching expected output)
+        # ====================================================================
+        # NEW LOG FORMAT - Updated to match adaptive ESC expectations
+        # ====================================================================
         log_msg = (
             f"[ESC] Updated SND: {self.model.desired_snd.item():.4f} "
             f"(Reward: {mean_reward:+.3f}, Update Step: {update_step:+.4f})"
         )
         
-        # Add adaptive features to log if enabled
+        # Add adaptive gain info if enabled
         if self.controller.use_adaptive_gain:
             gain_used = self.controller.current_gain
             log_msg += f" | Gain: {gain_used:.5f}"
             
+        # Add adaptive dither info if enabled
         if self.controller.use_adaptive_dither:
             dither_ratio = self.controller.a / self.controller.a_initial
             log_msg += f" | Dither: {self.controller.a:.4f} ({dither_ratio:.1%})"
@@ -266,10 +270,11 @@ class AdaptiveESCCallback(Callback):
                 log_msg += f" [STUCK:{controller_state['stuck_counter']}]"
         
         print(log_msg)
+        # ====================================================================
         
-        # Comprehensive logging (matching existing log names)
+        # Comprehensive logging (matching existing log names for backward compatibility)
         logs = {
-            # Core metrics (matching existing names for backward compatibility)
+            # Core metrics (matching existing names)
             "esc/mean_reward": mean_reward,
             "esc/cost": cost,
             "esc/diversity_output": perturbed_output_clamped,

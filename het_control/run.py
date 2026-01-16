@@ -149,7 +149,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
         )
         
         # Add ESC trajectory logger
-        callbacks.append(TrajectorySNDLoggerCallback(control_group=control_group))
+        # callbacks.append(TrajectorySNDLoggerCallback(control_group=control_group))
         
         # Add action space loss
         callbacks.append(
