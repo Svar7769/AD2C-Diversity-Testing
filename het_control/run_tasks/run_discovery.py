@@ -19,11 +19,11 @@ CONFIG_NAME = "discovery_ippo_config"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/discovery_ippo/"
 
 # Training parameters
-MAX_FRAMES = 3_000_000
-CHECKPOINT_INTERVAL = 3_000_000
+MAX_FRAMES = 6_000_000
+CHECKPOINT_INTERVAL = 6_000_000
 
 # Initial SND (matching your reference -1.0 value)
-DESIRED_SND = 0.5
+DESIRED_SND = -1.0
 
 # Task-specific overrides
 TASK_OVERRIDES = {
@@ -33,7 +33,7 @@ TASK_OVERRIDES = {
 }
 
 # ESC Controller Configuration
-USE_ESC = True  
+USE_ESC = False  
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Specific overrides for this task
