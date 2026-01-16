@@ -16,23 +16,24 @@ BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
 # Paths
 ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "balance_ippo_config"
-SAVE_PATH = " /home/spatel/Desktop/ad2c/model_checkpoint/balance_ippo/"
+SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/balance_ippo/"
 
 # Training parameters
-MAX_FRAMES = 6_000_000
-CHECKPOINT_INTERVAL = 6_000_000
+MAX_FRAMES = 12_000_000
+CHECKPOINT_INTERVAL = 12_000_000
 
 # Initial SND (will be overridden by ESC config if provided)
 DESIRED_SND = 0.0
 
 # Task-specific overrides (optional)
 TASK_OVERRIDES = {
-    # "n_agents": 4,
+    "n_agents": 3,
+    # "package_mass": 3,
     # "agents_with_same_goal": 1,
 }
 
 # ESC Controller Configuration
-USE_ESC = True  # Set to False to disable ESC
+USE_ESC = False  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # ESC parameter overrides
@@ -84,7 +85,7 @@ if __name__ == "__main__":
         save_path=SAVE_PATH,
         max_frames=MAX_FRAMES,
         checkpoint_interval=CHECKPOINT_INTERVAL,
-        desired_snd=DESIRED_SND,
+        # desired_snd=DESIRED_SND,
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
         use_esc=USE_ESC

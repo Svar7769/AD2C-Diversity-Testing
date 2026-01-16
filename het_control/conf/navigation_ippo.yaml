@@ -15,7 +15,7 @@ action_loss_lr: 0.00003
 
 task:
   n_agents: 3
-  agents_with_same_goal: 2
+  # agents_with_same_goal: 2
   # collisions: True
   # shared_rew: False
 

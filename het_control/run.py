@@ -211,7 +211,27 @@ def run_experiment(
         esc_config_path: Path to ESC configuration YAML (optional)
         use_esc: Whether to use ESC controller
     """
+    # ========================================================================
+    # PARSE COMMAND-LINE ARGS BEFORE THEY GET OVERWRITTEN
+    # ========================================================================
+    original_argv = sys.argv.copy()  # Save original arguments
+    
+    # Extract overrides from original command line
+    cli_overrides = {}
+    for arg in original_argv[1:]:  # Skip script name
+        if '=' in arg:
+            key, value = arg.split('=', 1)
+            cli_overrides[key] = value
+            print(f"🔧 Detected command-line override: {key}={value}")
+    
+    # Override desired_snd if provided via command line
+    if 'model.desired_snd' in cli_overrides:
+        desired_snd = float(cli_overrides['model.desired_snd'])
+        print(f"✅ Using command-line desired_snd: {desired_snd}")
+    
+    # ========================================================================
     # Load ESC configuration if provided
+    # ========================================================================
     esc_config = None
     if use_esc and esc_config_path is not None:
         esc_config = load_esc_config(esc_config_path)
@@ -224,8 +244,8 @@ def run_experiment(
             print(f"  {key}: {value}")
         print("="*80 + "\n")
         
-        # Use ESC's initial_snd if not explicitly overridden
-        if 'initial_snd' in esc_config:
+        # Use ESC's initial_snd if not explicitly overridden by command line
+        if 'initial_snd' in esc_config and 'model.desired_snd' not in cli_overrides:
             desired_snd = esc_config['initial_snd']
     
     # Clear any existing Hydra instance
@@ -272,10 +292,22 @@ def run_experiment(
         for param, value in esc_override_params.items():
             sys.argv.append(f"{param}={value}")
     
-    # Add task overrides if provided
+    # Add task overrides if provided (but don't override command-line args)
     if task_overrides:
         for param, value in task_overrides.items():
-            sys.argv.append(f"task.{param}={value}")
+            key = f"task.{param}"
+            if key not in cli_overrides:  # Only add if not in command line
+                sys.argv.append(f"{key}={value}")
+    
+    # ========================================================================
+    # ADD REMAINING COMMAND-LINE OVERRIDES (from original argv)
+    # ========================================================================
+    for key, value in cli_overrides.items():
+        # Skip model.desired_snd since we already handled it
+        if key != 'model.desired_snd':
+            # Skip task overrides that were already added
+            if not (key.startswith('task.') and task_overrides and key.replace('task.', '') in task_overrides):
+                sys.argv.append(f"{key}={value}")
     
     # Print configuration summary
     print("\n" + "="*80)

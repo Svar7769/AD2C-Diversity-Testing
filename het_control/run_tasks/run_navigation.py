@@ -9,7 +9,6 @@ import os
 # =============================================================================
 # CONFIGURATION - Updated Paths for New System
 # =============================================================================
-
 # Base directory for the project
 BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
 
@@ -22,13 +21,12 @@ SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/navigation_ippo/"
 MAX_FRAMES = 12_000_000
 CHECKPOINT_INTERVAL = 12_000_000
 
-# Initial SND
+# Initial SND (will be overridden by command-line args)
 DESIRED_SND = -1.0
 
-# Task-specific overrides
+# Task-specific overrides (keep only static parameters)
 TASK_OVERRIDES = {
-    "n_agents": 3,
-    "agents_with_same_goal": 3,
+    # Remove agents_with_same_goal to allow command-line override
 }
 
 # ESC Controller Configuration
@@ -44,7 +42,6 @@ ESC_OVERRIDES = {
 # =============================================================================
 # RUN EXPERIMENT
 # =============================================================================
-
 if __name__ == "__main__":
     # Load ESC config and apply overrides to create a temporary modified config
     temp_esc_config = None
@@ -55,7 +52,7 @@ if __name__ == "__main__":
             
             if 'esc_controller' not in esc_config:
                 esc_config['esc_controller'] = {}
-                
+            
             for key, value in ESC_OVERRIDES.items():
                 esc_config['esc_controller'][key] = value
                 print(f"🔧 Overriding ESC parameter: {key} = {value}")
@@ -83,7 +80,7 @@ if __name__ == "__main__":
         save_path=SAVE_PATH,
         max_frames=MAX_FRAMES,
         checkpoint_interval=CHECKPOINT_INTERVAL,
-        # desired_snd=DESIRED_SND,
+        # desired_snd=DESIRED_SND,  # Let command-line override handle this
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
         use_esc=USE_ESC
