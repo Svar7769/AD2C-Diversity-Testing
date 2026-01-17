@@ -242,7 +242,7 @@ def run_experiment(
         
         # Override existing parameters (without + prefix)
         sys.argv.extend([
-            f"use_action_loss={esc_config.get('use_action_loss', False)}",
+            f"use_action_loss={esc_config.get('use_action_loss', True)}",
             f"action_loss_lr={esc_config.get('action_loss_lr', 0.001)}",
         ])
     

@@ -39,7 +39,7 @@ esc_controller:
   dither_boost_rate: 1.02
   
   # Action loss parameters
-  use_action_loss: false
+  use_action_loss: False
   action_loss_lr: 0.001
   
   # Task-specific parameters (optional, from your config)
