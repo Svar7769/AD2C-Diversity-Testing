@@ -11,7 +11,8 @@ for snd in "${snd_values[@]}"; do
         echo "=================================================="
         python ./AD2C-Diversity-Testing/het_control/run_tasks/run_balance.py \
             model.desired_snd=$snd \
-            task.package_mass=$goals
+            task.package_mass=$goals \
+            task.n_agents=3 \
         
         # Optional: check if the run was successful
         if [ $? -ne 0 ]; then
