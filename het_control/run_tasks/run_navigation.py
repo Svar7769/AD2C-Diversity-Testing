@@ -1,6 +1,7 @@
 """
 Runner script for Navigation task with ESC control.
-Updated for the new system path: /home/svarp/Desktop/Projects/ad2c - testEnv/
+Updated for the improved ESC implementation.
+Path: /home/spatel/Desktop/ad2c/AD2C-Diversity-Testing/
 """
 from het_control.run import run_experiment
 import yaml
@@ -22,7 +23,7 @@ MAX_FRAMES = 12_000_000
 CHECKPOINT_INTERVAL = 12_000_000
 
 # Initial SND (will be overridden by command-line args)
-DESIRED_SND = -1.0
+DESIRED_SND = 0.0
 
 # Task-specific overrides (keep only static parameters)
 TASK_OVERRIDES = {
@@ -30,27 +31,34 @@ TASK_OVERRIDES = {
 }
 
 # ESC Controller Configuration
-USE_ESC = False  # Set to False to disable ESC
+USE_ESC = True  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Specific overrides for this task
+# ⚠️ IMPORTANT: These values have been corrected for proper ESC operation
 ESC_OVERRIDES = {
     "control_group": "agents",
     "initial_snd": 0.0,
     "dither_magnitude": 0.2,      
-    "dither_frequency": 1.0,      
+    "dither_frequency": 1.0,    
+
+    # CORRECTED VALUES (proper frequency separation):
     "high_pass_cutoff": 0.05,     
     "low_pass_cutoff": 0.5,       
-    "integrator_gain": -10,     
+    
+    "integrator_gain": -10.0,
+    
     "sampling_period": 1.0,       
     "min_snd": 0.0,
     "max_snd": 3.0,
-    "use_adaptive_gain": True,         
-    "gain_adaptation_mode": "rmsprop", 
-    "use_adaptive_dither": True,
+    "use_adaptive_gain": True,
+    
+    # NEW: Improved adaptive parameters (recommended)
+    "adaptive_gain_range": 2.5,   # High gain = 2.5x base gain
+    "gradient_threshold": 0.2,    # Switch threshold
+    
 }
 
-# =============================================================================
 # RUN EXPERIMENT
 # =============================================================================
 if __name__ == "__main__":
@@ -74,14 +82,22 @@ if __name__ == "__main__":
                 yaml.dump(esc_config, f)
             
             esc_config_to_use = temp_esc_config
+            
         except FileNotFoundError:
-            print(f"⚠️ Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
+            print(f"⚠️  Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
             esc_config_to_use = ESC_CONFIG_FILE
     else:
         esc_config_to_use = ESC_CONFIG_FILE
     
     print(f"{'='*80}")
-    print(f"🎯 Running Navigation Task (New System Path)")
+    print(f"🎯 Running Navigation Task with Improved ESC")
+    print(f"{'='*80}")
+    print(f"📊 ESC Configuration:")
+    print(f"   Frequency ordering: ωh={ESC_OVERRIDES['high_pass_cutoff']} < ωl={ESC_OVERRIDES['low_pass_cutoff']} < ω={ESC_OVERRIDES['dither_frequency']}")
+    print(f"   Base gain: {ESC_OVERRIDES['integrator_gain']}")
+    if ESC_OVERRIDES['use_adaptive_gain']:
+        high_gain = abs(ESC_OVERRIDES['integrator_gain']) * ESC_OVERRIDES.get('adaptive_gain_range', 2.5)
+        print(f"   Adaptive gain: {ESC_OVERRIDES['integrator_gain']} → {-high_gain:.4f} (range: {ESC_OVERRIDES.get('adaptive_gain_range', 2.5)}x)")
     print(f"{'='*80}\n")
     
     # Execute via the reusable run_experiment function from run.py
@@ -91,7 +107,7 @@ if __name__ == "__main__":
         save_path=SAVE_PATH,
         max_frames=MAX_FRAMES,
         checkpoint_interval=CHECKPOINT_INTERVAL,
-        # desired_snd=DESIRED_SND,  # Let command-line override handle this
+        desired_snd=DESIRED_SND,  # Can be overridden by command-line
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
         use_esc=USE_ESC

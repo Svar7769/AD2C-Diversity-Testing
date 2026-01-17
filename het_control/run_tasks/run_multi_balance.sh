@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run with different SND values and agents_with_same_goal configurations
 
-snd_values=(-1.0 0.0 0.5 1.0)
+snd_values=(0.0 0.5 1.0)
 goal_values=(2.0 3.0 4.0)
 
 for snd in "${snd_values[@]}"; do

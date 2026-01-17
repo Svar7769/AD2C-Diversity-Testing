@@ -1,6 +1,7 @@
 """
 Runner script for Balance task with ESC control.
-Updated for the new system path: /home/svarp/Desktop/Projects/ad2c - testEnv/
+Updated for the improved ESC implementation.
+Path: /home/spatel/Desktop/ad2c/AD2C-Diversity-Testing/
 """
 from het_control.run import run_experiment
 import yaml
@@ -9,7 +10,6 @@ import os
 # =============================================================================
 # CONFIGURATION - Updated Paths for New System
 # =============================================================================
-
 # Base directory for the project
 BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
 
@@ -22,31 +22,48 @@ SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/balance_ippo/"
 MAX_FRAMES = 12_000_000
 CHECKPOINT_INTERVAL = 12_000_000
 
-# Initial SND (will be overridden by ESC config if provided)
-DESIRED_SND = -1.0
+# Initial SND (will be overridden by ESC config)
+DESIRED_SND = 0.0
 
-# Task-specific overrides (optional)
+# Task-specific overrides (keep only static parameters)
 TASK_OVERRIDES = {
     "n_agents": 3,
+    # Uncomment and adjust as needed:
     # "package_mass": 3,
     # "agents_with_same_goal": 1,
 }
 
 # ESC Controller Configuration
-USE_ESC = False  # Set to False to disable ESC
+USE_ESC = True  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
-# ESC parameter overrides
+# Specific overrides for this task
+# ⚠️ IMPORTANT: These values have been corrected for proper ESC operation with ESCCallback
 ESC_OVERRIDES = {
     "control_group": "agents",
-    "initial_snd": DESIRED_SND,
-    # "dither_magnitude": 0.2,
+    "initial_snd": 0.0,
+    "dither_magnitude": 0.2,      
+    "dither_frequency": 1.0,    
+
+    # CORRECTED VALUES (proper frequency separation for ESCCallback):
+    # Note: ESCCallback defaults are high_pass=0.1, low_pass=0.05
+    "high_pass_cutoff": 0.1,      # ωh (high-pass cutoff)
+    "low_pass_cutoff": 0.05,      # ωl (low-pass cutoff)
+    
+    "integrator_gain": -0.1,      # Base gain for gradient descent
+    
+    "sampling_period": 1.0,       
+    "min_snd": 0.0,
+    "max_snd": 3.0,
+    "use_adaptive_gain": True,    # ESCCallback has built-in binary adaptive gain
+    
+    # Action loss parameters
+    "use_action_loss": False,
+    "action_loss_lr": 0.001,
 }
 
-# =============================================================================
 # RUN EXPERIMENT
 # =============================================================================
-
 if __name__ == "__main__":
     # Load ESC config and apply overrides to create a temporary modified config
     temp_esc_config = None
@@ -57,7 +74,7 @@ if __name__ == "__main__":
             
             if 'esc_controller' not in esc_config:
                 esc_config['esc_controller'] = {}
-                
+            
             for key, value in ESC_OVERRIDES.items():
                 esc_config['esc_controller'][key] = value
                 print(f"🔧 Overriding ESC parameter: {key} = {value}")
@@ -68,14 +85,24 @@ if __name__ == "__main__":
                 yaml.dump(esc_config, f)
             
             esc_config_to_use = temp_esc_config
+            
         except FileNotFoundError:
-            print(f"⚠️ Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
+            print(f"⚠️  Warning: ESC config not found at {ESC_CONFIG_FILE}. Using defaults.")
             esc_config_to_use = ESC_CONFIG_FILE
     else:
         esc_config_to_use = ESC_CONFIG_FILE
     
     print(f"{'='*80}")
-    print(f"🎯 Running Balance Task (New System Path)")
+    print(f"🎯 Running Balance Task with ESC")
+    print(f"{'='*80}")
+    print(f"📊 ESC Configuration:")
+    print(f"   Control group: {ESC_OVERRIDES['control_group']}")
+    print(f"   Frequency ordering: ωl={ESC_OVERRIDES['low_pass_cutoff']} < ωh={ESC_OVERRIDES['high_pass_cutoff']} < ω={ESC_OVERRIDES['dither_frequency']}")
+    print(f"   Base gain: {ESC_OVERRIDES['integrator_gain']}")
+    if ESC_OVERRIDES['use_adaptive_gain']:
+        print(f"   Adaptive gain: Binary switching (built-in)")
+    print(f"   Dither: ±{ESC_OVERRIDES['dither_magnitude']} @ {ESC_OVERRIDES['dither_frequency']} rad/s")
+    print(f"   SND bounds: [{ESC_OVERRIDES['min_snd']}, {ESC_OVERRIDES['max_snd']}]")
     print(f"{'='*80}\n")
     
     # Execute via the reusable run_experiment function from run.py
@@ -85,7 +112,7 @@ if __name__ == "__main__":
         save_path=SAVE_PATH,
         max_frames=MAX_FRAMES,
         checkpoint_interval=CHECKPOINT_INTERVAL,
-        # desired_snd=DESIRED_SND,
+        desired_snd=DESIRED_SND,
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
         use_esc=USE_ESC

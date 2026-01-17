@@ -1,6 +1,6 @@
 """
 Callback for integrating Extremum Seeking Control with BenchMARL experiments.
-UPDATED VERSION - New log format matching adaptive ESC implementation.
+UPDATED VERSION - Matches esc_controller.py interface.
 """
 from typing import List, Optional
 import torch
@@ -20,9 +20,6 @@ class AdaptiveESCCallback(Callback):
     The ESC applies a sinusoidal perturbation to the SND continuously
     (during both training and evaluation) and uses evaluation rewards 
     to estimate gradients and update the setpoint.
-    
-    Supports both classical ESC and adaptive extensions (RMSprop-style gain,
-    adaptive dither) that can be toggled via flags.
     """
     
     def __init__(
@@ -39,11 +36,11 @@ class AdaptiveESCCallback(Callback):
         sampling_period: float = 1.0,
         min_snd: float = 0.0,
         max_snd: float = 3.0,
-        # Adaptive gain parameters
+        # Adaptive gain parameters (stored but not passed to controller)
         gain_adaptation_mode: str = "rmsprop",
         binary_gain_threshold: float = 0.2,
         binary_high_gain_multiplier: float = 2.5,
-        # Adaptive dither parameters
+        # Adaptive dither parameters (not supported)
         dither_decay_rate: float = 0.999,
         min_dither_ratio: float = 0.1,
         dither_boost_threshold: float = 0.01,
@@ -59,21 +56,17 @@ class AdaptiveESCCallback(Callback):
             high_pass_cutoff_rad_s: High-pass filter cutoff frequency (rad/s)
             low_pass_cutoff_rad_s: Low-pass filter cutoff frequency (rad/s)
             use_adaptive_gain: Whether to use adaptive gain adjustment
-            use_adaptive_dither: Whether to use adaptive dither magnitude
+            use_adaptive_dither: Whether to use adaptive dither (NOT SUPPORTED)
             sampling_period: Time between ESC updates (seconds)
             min_snd: Minimum allowed SND value
             max_snd: Maximum allowed SND value
             
-            # Adaptive Gain Parameters:
-            gain_adaptation_mode: Mode for adaptive gain ("rmsprop", "binary", "gradient_norm")
-            binary_gain_threshold: Threshold for binary mode switching
-            binary_high_gain_multiplier: Multiplier for high gain in binary mode
-            
-            # Adaptive Dither Parameters:
-            dither_decay_rate: Rate at which dither decays (0.995-0.999)
-            min_dither_ratio: Minimum dither as fraction of initial (e.g., 0.1 = 10%)
-            dither_boost_threshold: Gradient magnitude below which to boost dither
-            dither_boost_rate: Rate at which dither increases when boosted
+            Note: The following parameters are stored but not currently used by
+            the ExtremumSeekingController (which has its own hardcoded adaptive logic):
+            - gain_adaptation_mode
+            - binary_gain_threshold
+            - binary_high_gain_multiplier
+            - All adaptive dither parameters
         """
         super().__init__()
         self.control_group = control_group
@@ -81,7 +74,7 @@ class AdaptiveESCCallback(Callback):
         self.min_snd = min_snd
         self.max_snd = max_snd
         
-        # Store parameters for logging
+        # Store parameters for logging (even if not all are used by controller)
         self.esc_params = {
             "sampling_period": sampling_period,
             "dither_frequency": dither_frequency_rad_s,
@@ -127,6 +120,7 @@ class AdaptiveESCCallback(Callback):
         # Initialize controller if model is compatible
         if isinstance(self.model, HetControlMlpEmpirical):
             try:
+                # Only pass parameters that ExtremumSeekingController actually accepts
                 self.controller = ExtremumSeekingController(
                     sampling_period=self.esc_params["sampling_period"],
                     dither_frequency=self.esc_params["dither_frequency"],
@@ -136,15 +130,7 @@ class AdaptiveESCCallback(Callback):
                     high_pass_cutoff=self.esc_params["high_pass_cutoff"],
                     low_pass_cutoff=self.esc_params["low_pass_cutoff"],
                     use_adaptive_gain=self.esc_params["use_adaptive_gain"],
-                    use_adaptive_dither=self.esc_params["use_adaptive_dither"],
                     min_output=self.min_snd,
-                    gain_adaptation_mode=self.esc_params["gain_adaptation_mode"],
-                    binary_gain_threshold=self.esc_params["binary_gain_threshold"],
-                    binary_high_gain_multiplier=self.esc_params["binary_high_gain_multiplier"],
-                    dither_decay_rate=self.esc_params["dither_decay_rate"],
-                    min_dither_ratio=self.esc_params["min_dither_ratio"],
-                    dither_boost_threshold=self.esc_params["dither_boost_threshold"],
-                    dither_boost_rate=self.esc_params["dither_boost_rate"],
                 )
             except ValueError as e:
                 print(f"\n❌ ERROR: Failed to initialize ESC Controller: {e}\n")
@@ -162,14 +148,14 @@ class AdaptiveESCCallback(Callback):
             
             # Print configuration
             mode_desc = "Classical ESC"
-            if self.esc_params["use_adaptive_gain"] or self.esc_params["use_adaptive_dither"]:
-                mode_desc = "Adaptive ESC ("
-                features = []
-                if self.esc_params["use_adaptive_gain"]:
-                    features.append(f"{self.esc_params['gain_adaptation_mode']} gain")
-                if self.esc_params["use_adaptive_dither"]:
-                    features.append("adaptive dither")
-                mode_desc += ", ".join(features) + ")"
+            if self.esc_params["use_adaptive_gain"]:
+                mode_desc = "Adaptive ESC (binary gain switching)"
+            
+            # Warn about unsupported features
+            if self.esc_params["use_adaptive_dither"]:
+                print(f"\n⚠️  WARNING: Adaptive dither requested but not supported by ExtremumSeekingController")
+            if self.esc_params["gain_adaptation_mode"] != "binary":
+                print(f"\n⚠️  WARNING: gain_adaptation_mode='{self.esc_params['gain_adaptation_mode']}' requested, but controller only supports binary mode")
             
             print(f"\n✅ SUCCESS: ESC Controller initialized for group '{self.control_group}'.")
             print(f"   Mode: {mode_desc}")
@@ -180,9 +166,7 @@ class AdaptiveESCCallback(Callback):
             print(f"   Low-pass cutoff: {self.esc_params['low_pass_cutoff']:.3f} rad/s")
             print(f"   Frequency ordering: ωh={self.esc_params['high_pass_cutoff']:.3f} < ωl={self.esc_params['low_pass_cutoff']:.2f} < ω={self.esc_params['dither_frequency']:.2f} ✓")
             if self.esc_params["use_adaptive_gain"]:
-                print(f"   Adaptive gain mode: {self.esc_params['gain_adaptation_mode']}")
-            if self.esc_params["use_adaptive_dither"]:
-                print(f"   Dither decay: {self.esc_params['dither_decay_rate']:.4f}, min ratio: {self.esc_params['min_dither_ratio']:.2f}")
+                print(f"   Adaptive gain: Binary switching (hardcoded thresholds)")
             print(f"   SND bounds: [{self.min_snd:.1f}, {self.max_snd:.1f}]\n")
         else:
             print(f"\nWARNING: Compatible model not found for group '{self.control_group}'. Disabling ESC.\n")
@@ -223,7 +207,6 @@ class AdaptiveESCCallback(Callback):
         # Store previous state
         previous_snd = self.model.desired_snd.item()
         previous_setpoint = self.controller.theta_0 + self.controller.integral
-        previous_dither = self.controller.a
         
         # Update controller with the cost
         (
@@ -247,10 +230,9 @@ class AdaptiveESCCallback(Callback):
         # Compute changes
         update_step = self.model.desired_snd.item() - previous_snd
         setpoint_change = setpoint - previous_setpoint
-        dither_change = self.controller.a - previous_dither
         
         # ====================================================================
-        # NEW LOG FORMAT - Updated to match adaptive ESC expectations
+        # Logging
         # ====================================================================
         log_msg = (
             f"[ESC] Updated SND: {self.model.desired_snd.item():.4f} "
@@ -258,23 +240,20 @@ class AdaptiveESCCallback(Callback):
         )
         
         # Add adaptive gain info if enabled
-        if self.controller.use_adaptive_gain:
-            gain_used = self.controller.current_gain
+        if self.controller.use_adaptive:
+            # Controller doesn't expose current_gain, so we estimate it from gradient
+            if gradient_magnitude > self.controller.gradient_threshold:
+                gain_used = self.controller.high_gain
+            else:
+                gain_used = self.controller.k
             log_msg += f" | Gain: {gain_used:.5f}"
-            
-        # Add adaptive dither info if enabled
-        if self.controller.use_adaptive_dither:
-            dither_ratio = self.controller.a / self.controller.a_initial
-            log_msg += f" | Dither: {self.controller.a:.4f} ({dither_ratio:.1%})"
-            if controller_state["stuck_counter"] > 0:
-                log_msg += f" [STUCK:{controller_state['stuck_counter']}]"
         
         print(log_msg)
         # ====================================================================
         
-        # Comprehensive logging (matching existing log names for backward compatibility)
+        # Comprehensive logging
         logs = {
-            # Core metrics (matching existing names)
+            # Core metrics
             "esc/mean_reward": mean_reward,
             "esc/cost": cost,
             "esc/diversity_output": perturbed_output_clamped,
@@ -295,22 +274,19 @@ class AdaptiveESCCallback(Callback):
         }
         
         # Add adaptive gain metrics if enabled
-        if self.controller.use_adaptive_gain:
+        if self.controller.use_adaptive:
+            # Estimate current gain based on gradient magnitude
+            if gradient_magnitude > self.controller.gradient_threshold:
+                current_gain = self.controller.high_gain
+            else:
+                current_gain = self.controller.k
+                
             logs.update({
-                "esc/gain_current": self.controller.current_gain,
+                "esc/gain_current": current_gain,
                 "esc/gain_base": self.controller.k,
-                "esc/gain_ratio": abs(self.controller.current_gain / self.controller.k),
-            })
-        
-        # Add adaptive dither metrics if enabled
-        if self.controller.use_adaptive_dither:
-            logs.update({
-                "esc/dither_amplitude": self.controller.a,
-                "esc/dither_amplitude_initial": self.controller.a_initial,
-                "esc/dither_ratio": controller_state["dither_ratio"],
-                "esc/dither_change": dither_change,
-                "esc/cost_variance": controller_state["cost_variance"],
-                "esc/stuck_counter": controller_state["stuck_counter"],
+                "esc/gain_ratio": abs(current_gain / self.controller.k),
+                "esc/gradient_magnitude": gradient_magnitude,
+                "esc/gradient_threshold": self.controller.gradient_threshold,
             })
         
         self.experiment.logger.log(logs, step=self.experiment.n_iters_performed)
