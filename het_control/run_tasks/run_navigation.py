@@ -21,19 +21,20 @@ CONFIG_NAME = "navigation_ippo"
 BASE_SAVE_PATH = Path("/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/navigation_ippo")
 
 # Training parameters
-MAX_FRAMES = 1_200_000
-CHECKPOINT_INTERVAL = 1_200_000
+MAX_FRAMES = 6_000_000
+CHECKPOINT_INTERVAL = 6_000_000
 USE_ESC = True
 
 # Task defaults
 TASK_OVERRIDES = {
-    "n_agents": 3
+    "n_agents": 3,
+    "agents_with_same_goal": 2
 }
 
 # ESC configuration (using new optimizer-based implementation)
 ESC_PARAMS = {
     "control_group": "agents",
-    "initial_snd": 0.0,
+    "initial_snd": 0.5,
     "dither_magnitude": 0.2,
     "dither_frequency": 1.0,
     "high_pass_cutoff": 0.5,
