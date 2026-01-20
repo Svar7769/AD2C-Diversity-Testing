@@ -34,23 +34,15 @@ TASK_OVERRIDES = {
 # ESC configuration (using new optimizer-based implementation)
 ESC_PARAMS = {
     "control_group": "agents",
-    "initial_snd": 0.5,
+    "initial_snd": 1,
+    "integrator_gain": -0.07,
     "dither_magnitude": 0.2,
     "dither_frequency": 1.0,
-    "high_pass_cutoff": 0.5,
-    "low_pass_cutoff": 0.1,
+    "high_pass_cutoff": 1.0,
+    "low_pass_cutoff": 1.0,
     "sampling_period": 1.0,
     "min_snd": 0.0,
     "max_snd": 3.0,
-    "maximize": True,
-    # Optimizer settings
-    "optimizer_type": "adam",  # 'adam', 'rmsprop', or 'sgd'
-    "learning_rate": 0.01,
-    "betas": [0.9, 0.999],  # For Adam
-    "alpha": 0.99,  # For RMSprop
-    "momentum": 0.9,  # For SGD/RMSprop
-    "use_lr_scheduler": False,
-    "scheduler_type": "plateau",
 }
 
 

@@ -63,33 +63,18 @@ def configure_model_for_algorithm(model_config, algorithm_config):
 def create_esc_callback(esc_config: Dict[str, Any]) -> AdaptiveESCCallback:
     """Create ESC callback from configuration dictionary."""
     return AdaptiveESCCallback(
-        control_group=esc_config.get("control_group", "agents"),
-        initial_snd=esc_config.get("initial_snd", 1.0),
-        dither_magnitude=esc_config.get("dither_magnitude", 0.1),
-        dither_frequency_rad_s=esc_config.get("dither_frequency", 0.5),
-        high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.1),
-        low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.05),
-        sampling_period=esc_config.get("sampling_period", 1.0),
-        min_snd=esc_config.get("min_snd", 0.0),
-        max_snd=esc_config.get("max_snd", 3.0),
-        maximize=esc_config.get("maximize", True),
-        # Optimizer settings
-        optimizer_type=esc_config.get("optimizer_type", "adam"),
-        learning_rate=esc_config.get("learning_rate", 0.01),
-        momentum=esc_config.get("momentum", 0.9),
-        betas=tuple(esc_config.get("betas", [0.9, 0.999])),
-        alpha=esc_config.get("alpha", 0.99),
-        eps=esc_config.get("eps", 1e-8),
-        weight_decay=esc_config.get("weight_decay", 0.0),
-        centered=esc_config.get("centered", False),
-        amsgrad=esc_config.get("amsgrad", False),
-        nesterov=esc_config.get("nesterov", False),
-        # Scheduler settings (not yet implemented in controller)
-        use_lr_scheduler=esc_config.get("use_lr_scheduler", False),
-        scheduler_type=esc_config.get("scheduler_type", "plateau"),
-        scheduler_patience=esc_config.get("scheduler_patience", 100),
-        scheduler_factor=esc_config.get("scheduler_factor", 0.5)
-    )
+                control_group=esc_config.get("control_group", "agents"),
+                initial_snd=esc_config.get("initial_snd", 0.0),
+                dither_magnitude=esc_config.get("dither_magnitude", 0.2),
+                dither_frequency_rad_s=esc_config.get("dither_frequency", 1.0),
+                integrator_gain=esc_config.get("integrator_gain", -0.001),
+                high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.5),
+                low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
+                use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
+                sampling_period=esc_config.get("sampling_period", 1.0),
+                min_snd=esc_config.get("min_snd", 0.0),
+                max_snd=esc_config.get("max_snd", 3.0)
+            )
 
 
 def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None) -> Experiment:
@@ -128,7 +113,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
         SndCallback(),
         NormLoggerCallback(),
         ActionSpaceLoss(
-            use_action_loss=esc_config.get("use_action_loss", False) if esc_config else cfg.get("use_action_loss", False),
+            use_action_loss=esc_config.get("use_action_loss", True) if esc_config else cfg.get("use_action_loss", True),
             action_loss_lr=esc_config.get("action_loss_lr", 0.001) if esc_config else cfg.get("action_loss_lr", 0.001)
         ),
         SNDVisualizerCallback()

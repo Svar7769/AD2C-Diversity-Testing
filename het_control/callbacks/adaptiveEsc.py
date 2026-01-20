@@ -1,28 +1,43 @@
 """
-Extremum Seeking Control (ESC) with ML-style optimizers.
-Modular implementation with separate optimizer classes.
+Extremum Seeking Control (ESC) implementation.
+A gradient-free optimization method that uses sinusoidal perturbations
+to estimate gradients and converge to optimal parameter values.
 """
 import numpy as np
-from typing import Tuple, Literal
+from typing import Tuple
 
 
 class HighPassFilter:
     """First-order high-pass filter to remove DC offset from signals."""
     
     def __init__(self, sampling_period: float, cutoff_frequency: float):
+        """
+        Args:
+            sampling_period: Time between samples (seconds)
+            cutoff_frequency: Cutoff frequency in rad/s
+        """
         self.dt = sampling_period
         self.wc = cutoff_frequency
+        
+        # Filter coefficient: alpha = wc / (wc + 1/dt)
         self.alpha = self.wc / (self.wc + 1.0 / self.dt)
+        
+        # Previous values for filtering
         self.prev_input = 0.0
         self.prev_output = 0.0
     
     def apply(self, input_signal: float) -> float:
+        """Apply high-pass filter to input signal."""
+        # HPF formula: y[k] = alpha * (y[k-1] + x[k] - x[k-1])
         output = self.alpha * (self.prev_output + input_signal - self.prev_input)
+        
         self.prev_input = input_signal
         self.prev_output = output
+        
         return output
     
     def reset(self):
+        """Reset filter state."""
         self.prev_input = 0.0
         self.prev_output = 0.0
 
@@ -31,195 +46,40 @@ class LowPassFilter:
     """First-order low-pass filter to smooth signals."""
     
     def __init__(self, sampling_period: float, cutoff_frequency: float):
+        """
+        Args:
+            sampling_period: Time between samples (seconds)
+            cutoff_frequency: Cutoff frequency in rad/s
+        """
         self.dt = sampling_period
         self.wc = cutoff_frequency
+        
+        # Filter coefficient: alpha = dt * wc / (1 + dt * wc)
         self.alpha = (self.dt * self.wc) / (1.0 + self.dt * self.wc)
+        
+        # Previous output for filtering
         self.prev_output = 0.0
     
     def apply(self, input_signal: float) -> float:
+        """Apply low-pass filter to input signal."""
+        # LPF formula: y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
         output = self.alpha * input_signal + (1.0 - self.alpha) * self.prev_output
+        
         self.prev_output = output
+        
         return output
     
     def reset(self):
+        """Reset filter state."""
         self.prev_output = 0.0
-
-
-class RMSpropOptimizer:
-    """RMSprop optimizer for ESC parameter updates."""
-    
-    def __init__(
-        self,
-        learning_rate: float = 0.01,
-        alpha: float = 0.99,
-        eps: float = 1e-8,
-        momentum: float = 0.0,
-        centered: bool = False
-    ):
-        self.lr = learning_rate
-        self.alpha = alpha
-        self.eps = eps
-        self.momentum = momentum
-        self.centered = centered
-        
-        # State
-        self.v = 0.0
-        self.buf = 0.0
-        self.g_avg = 0.0
-        
-    def step(self, gradient: float, parameter: float) -> float:
-        # Update moving average of squared gradients
-        self.v = self.alpha * self.v + (1.0 - self.alpha) * (gradient ** 2)
-        
-        # Centered variant
-        if self.centered:
-            self.g_avg = self.alpha * self.g_avg + (1.0 - self.alpha) * gradient
-            v_centered = self.v - (self.g_avg ** 2)
-            denominator = np.sqrt(v_centered + self.eps)
-        else:
-            denominator = np.sqrt(self.v + self.eps)
-        
-        # Apply update
-        if self.momentum > 0:
-            self.buf = self.momentum * self.buf + gradient / denominator
-            update = self.lr * self.buf
-        else:
-            update = self.lr * gradient / denominator
-        
-        return parameter - update
-    
-    def reset(self):
-        self.v = 0.0
-        self.buf = 0.0
-        self.g_avg = 0.0
-    
-    def get_state(self) -> dict:
-        return {
-            "v": self.v,
-            "momentum_buffer": self.buf,
-            "gradient_avg": self.g_avg if self.centered else None,
-            "learning_rate": self.lr
-        }
-    
-    def set_learning_rate(self, lr: float):
-        self.lr = lr
-
-
-class AdamOptimizer:
-    """Adam optimizer for ESC parameter updates."""
-    
-    def __init__(
-        self,
-        learning_rate: float = 0.001,
-        beta1: float = 0.9,
-        beta2: float = 0.999,
-        eps: float = 1e-8,
-        amsgrad: bool = False
-    ):
-        self.lr = learning_rate
-        self.beta1 = beta1
-        self.beta2 = beta2
-        self.eps = eps
-        self.amsgrad = amsgrad
-        
-        # State
-        self.m = 0.0
-        self.v = 0.0
-        self.v_max = 0.0
-        self.t = 0
-        
-    def step(self, gradient: float, parameter: float) -> float:
-        self.t += 1
-        
-        # Update moments
-        self.m = self.beta1 * self.m + (1.0 - self.beta1) * gradient
-        self.v = self.beta2 * self.v + (1.0 - self.beta2) * (gradient ** 2)
-        
-        # Bias correction
-        m_hat = self.m / (1.0 - self.beta1 ** self.t)
-        
-        if self.amsgrad:
-            self.v_max = max(self.v_max, self.v)
-            v_hat = self.v_max / (1.0 - self.beta2 ** self.t)
-        else:
-            v_hat = self.v / (1.0 - self.beta2 ** self.t)
-        
-        # Compute update
-        update = self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
-        return parameter - update
-    
-    def reset(self):
-        self.m = 0.0
-        self.v = 0.0
-        self.v_max = 0.0
-        self.t = 0
-    
-    def get_state(self) -> dict:
-        return {
-            "momentum": self.m,
-            "variance": self.v,
-            "v_max": self.v_max if self.amsgrad else None,
-            "t": self.t,
-            "learning_rate": self.lr
-        }
-    
-    def set_learning_rate(self, lr: float):
-        self.lr = lr
-
-
-class SGDOptimizer:
-    """SGD optimizer with momentum for ESC parameter updates."""
-    
-    def __init__(
-        self,
-        learning_rate: float = 0.01,
-        momentum: float = 0.0,
-        dampening: float = 0.0,
-        nesterov: bool = False
-    ):
-        self.lr = learning_rate
-        self.momentum = momentum
-        self.dampening = dampening
-        self.nesterov = nesterov
-        
-        # State
-        self.buf = 0.0
-        
-    def step(self, gradient: float, parameter: float) -> float:
-        if self.momentum > 0:
-            if self.buf == 0.0:
-                self.buf = gradient
-            else:
-                self.buf = self.momentum * self.buf + (1.0 - self.dampening) * gradient
-            
-            if self.nesterov:
-                update = self.lr * (gradient + self.momentum * self.buf)
-            else:
-                update = self.lr * self.buf
-        else:
-            update = self.lr * gradient
-        
-        return parameter - update
-    
-    def reset(self):
-        self.buf = 0.0
-    
-    def get_state(self) -> dict:
-        return {
-            "momentum_buffer": self.buf,
-            "learning_rate": self.lr
-        }
-    
-    def set_learning_rate(self, lr: float):
-        self.lr = lr
 
 
 class ExtremumSeekingController:
     """
-    Extremum Seeking Controller with ML-style optimizers.
+    Extremum Seeking Controller for real-time optimization.
     
-    Uses sinusoidal perturbations to estimate gradients and
-    optimizers (Adam, RMSprop, SGD) to update parameters.
+    Uses sinusoidal perturbations to estimate gradients of an unknown cost function
+    and adjusts parameters to find the optimum.
     """
     
     def __init__(
@@ -227,138 +87,130 @@ class ExtremumSeekingController:
         sampling_period: float,
         dither_frequency: float,
         dither_magnitude: float,
+        integrator_gain: float,
         initial_value: float,
         high_pass_cutoff: float,
         low_pass_cutoff: float,
-        min_output: float = 0.0,
-        maximize: bool = False,
-        optimizer_type: Literal['adam', 'rmsprop', 'sgd'] = 'adam',
-        learning_rate: float = 0.01,
-        **optimizer_kwargs
+        use_adaptive_gain: bool = True,
+        min_output: float = 0.0
     ):
         """
         Args:
             sampling_period: Time between updates (seconds)
             dither_frequency: Perturbation frequency (rad/s)
             dither_magnitude: Amplitude of perturbation
+            integrator_gain: Base gain for parameter updates (negative for gradient descent)
             initial_value: Starting parameter value
             high_pass_cutoff: High-pass filter cutoff (rad/s)
             low_pass_cutoff: Low-pass filter cutoff (rad/s)
+            use_adaptive_gain: Whether to use adaptive gain switching
             min_output: Minimum allowed output value
-            maximize: If True, maximize objective; if False, minimize
-            optimizer_type: Type of optimizer ('adam', 'rmsprop', 'sgd')
-            learning_rate: Learning rate for optimizer
-            **optimizer_kwargs: Additional optimizer-specific arguments
         """
         self.dt = sampling_period
-        self.omega = dither_frequency
-        self.a = dither_magnitude
+        self.omega = dither_frequency  # Perturbation frequency
+        self.a = dither_magnitude  # Perturbation amplitude
+        self.k = integrator_gain  # Base integrator gain (should be negative for descent)
+        self.theta_0 = initial_value  # Initial setpoint
+        self.use_adaptive = use_adaptive_gain
         self.min_output = min_output
-        self.maximize = maximize
-        self.optimizer_type = optimizer_type
         
         # Initialize filters
         self.hpf = HighPassFilter(sampling_period, high_pass_cutoff)
         self.lpf = LowPassFilter(sampling_period, low_pass_cutoff)
         
         # State variables
-        self.theta = initial_value
-        self.phase = 0.0
+        self.phase = 0.0  # Current phase of perturbation (wt)
+        self.integral = 0.0  # Integrator state
         
-        # Gradient tracking
-        self.m2 = 0.0
-        self.beta = 0.8
-        self.epsilon = 1e-8
+        # Adaptive gain parameters
+        self.m2 = 0.0  # Second moment estimate (for RMS)
+        self.beta = 0.8  # Exponential moving average coefficient
+        self.epsilon = 1e-8  # Small constant to prevent division by zero
         
-        # Initialize optimizer
-        if optimizer_type == 'rmsprop':
-            self.optimizer = RMSpropOptimizer(learning_rate=learning_rate, **optimizer_kwargs)
-        elif optimizer_type == 'adam':
-            self.optimizer = AdamOptimizer(learning_rate=learning_rate, **optimizer_kwargs)
-        elif optimizer_type == 'sgd':
-            self.optimizer = SGDOptimizer(learning_rate=learning_rate, **optimizer_kwargs)
-        else:
-            raise ValueError(f"Unknown optimizer: {optimizer_type}")
-        
-        self.step_count = 0
+        # Adaptive gain thresholds
+        self.gradient_threshold = 0.2
+        self.high_gain = -0.1  # Used when gradient magnitude is high
     
     def update(self, cost: float) -> Tuple[float, float, float, float, float, float]:
         """
-        Update controller with new cost/reward measurement.
+        Update the controller with a new cost measurement.
         
         Args:
-            cost: Current value of objective function
+            cost: Current value of the cost function
             
         Returns:
-            Tuple of (output, hpf_output, gradient_estimate, gradient_magnitude, 
-                     raw_gradient, theta_value)
+            Tuple containing:
+                - output: Perturbed parameter value (setpoint + dither)
+                - hpf_output: High-pass filter output
+                - lpf_output: Low-pass filter output (gradient estimate)
+                - gradient_magnitude: RMS of gradient estimate
+                - gradient: Raw gradient estimate
+                - setpoint: Current setpoint (without perturbation)
         """
-        # ESC gradient estimation
+        # 1. High-pass filter to remove DC component from cost signal
         hpf_output = self.hpf.apply(cost)
+        
+        # 2. Demodulate by multiplying with sin(wt)
         demodulated = hpf_output * np.sin(self.phase)
-        gradient_estimate = self.lpf.apply(demodulated)
         
-        # Track gradient magnitude
-        self.m2 = self.beta * self.m2 + (1.0 - self.beta) * (gradient_estimate ** 2)
-        gradient_magnitude = np.sqrt(self.m2 + self.epsilon)
+        # 3. Low-pass filter to extract gradient estimate
+        lpf_output = self.lpf.apply(demodulated)
         
-        # Apply optimizer
-        if self.maximize:
-            gradient = -gradient_estimate  # Negate for gradient ascent
+        # 4. Compute gradient magnitude using exponential moving average of squared gradient
+        self.m2 = self.beta * self.m2 + (1.0 - self.beta) * (lpf_output ** 2)
+        gradient_magnitude = np.sqrt(self.m2)
+        
+        # 5. Determine integrator gain (adaptive or fixed)
+        if self.use_adaptive:
+            # Use high gain when gradient is large, base gain when gradient is small
+            gain = self.high_gain if gradient_magnitude > self.gradient_threshold else self.k
         else:
-            gradient = gradient_estimate  # Normal gradient descent
+            gain = self.k
         
-        self.theta = self.optimizer.step(gradient, self.theta)
+        # 6. Integrate gradient to update parameter estimate
+        self.integral += gain * lpf_output * self.dt
         
-        # Apply constraints
-        self.theta = max(self.theta, self.min_output)
+        # 7. Compute setpoint (base parameter value without perturbation)
+        setpoint_raw = self.theta_0 + self.integral
         
-        # Add perturbation
+        # 8. Apply output constraints (clamping with anti-windup)
+        setpoint = max(setpoint_raw, self.min_output)
+        
+        # 9. Anti-windup: correct integrator if output is saturated
+        if setpoint_raw < self.min_output:
+            self.integral = self.min_output - self.theta_0
+        
+        # 10. Add perturbation to get final output
         perturbation = self.a * np.sin(self.phase)
-        output = self.theta + perturbation
+        output = setpoint + perturbation
         
-        # Update phase
+        # 11. Update phase for next iteration
         self.phase += self.omega * self.dt
         if self.phase > 2 * np.pi:
             self.phase -= 2 * np.pi
         
-        self.step_count += 1
-        
         return (
-            output,
-            hpf_output,
-            gradient_estimate,
-            gradient_magnitude,
-            gradient_estimate,
-            self.theta
+            output,           # Total output (setpoint + perturbation)
+            hpf_output,       # High-pass filtered cost
+            lpf_output,       # Gradient estimate
+            gradient_magnitude,  # RMS of gradient
+            lpf_output,       # Raw gradient (same as lpf_output)
+            setpoint          # Base setpoint (no perturbation)
         )
     
     def reset(self):
-        """Reset controller state."""
+        """Reset controller state to initial conditions."""
         self.hpf.reset()
         self.lpf.reset()
         self.phase = 0.0
+        self.integral = 0.0
         self.m2 = 0.0
-        self.theta = 0.0
-        self.optimizer.reset()
-        self.step_count = 0
     
     def get_state(self) -> dict:
         """Get current controller state."""
-        state = {
+        return {
             "phase": self.phase,
-            "theta": self.theta,
-            "gradient_magnitude": np.sqrt(self.m2 + self.epsilon),
-            "optimizer_type": self.optimizer_type,
-            "step_count": self.step_count
+            "integral": self.integral,
+            "m2": self.m2,
+            "gradient_magnitude": np.sqrt(self.m2)
         }
-        
-        # Add optimizer state
-        optimizer_state = self.optimizer.get_state()
-        state.update(optimizer_state)
-        
-        return state
-    
-    def set_learning_rate(self, lr: float):
-        """Update optimizer learning rate."""
-        self.optimizer.set_learning_rate(lr)
