@@ -24,7 +24,7 @@ esc_controller:
   max_snd: 3.0
   
   # Adaptive features (matching your current config)
-  use_adaptive_gain: true          # You had this enabled
+  use_adaptive_gain: false          # You had this enabled
   use_adaptive_dither: false       # Classical dither (new option)
   
   # Adaptive gain parameters (only used if use_adaptive_gain=true)

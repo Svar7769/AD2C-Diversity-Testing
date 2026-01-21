@@ -30,7 +30,7 @@ class AdaptiveESCCallback(Callback):
         integrator_gain: float = -0.01,
         high_pass_cutoff_rad_s: float = 0.1,
         low_pass_cutoff_rad_s: float = 0.05,
-        use_adaptive_gain: bool = True,
+        use_adaptive_gain: bool = False,
         sampling_period: float = 1.0,
         min_snd: float = 0.0,
         max_snd: float = 3.0
@@ -101,7 +101,8 @@ class AdaptiveESCCallback(Callback):
                 high_pass_cutoff=self.esc_params["high_pass_cutoff"],
                 low_pass_cutoff=self.esc_params["low_pass_cutoff"],
                 use_adaptive_gain=self.esc_params["use_adaptive_gain"],
-                min_output=self.min_snd
+                min_output=self.min_snd,
+                max_output=self.max_snd
             )
             
             # Set initial desired SND (with initial perturbation)
@@ -167,7 +168,7 @@ class AdaptiveESCCallback(Callback):
             hpf_output,          # High-pass filtered cost
             gradient_estimate,   # Gradient estimate (LPF output)
             gradient_magnitude,  # RMS of gradient
-            _,                   # Duplicate gradient (not needed)
+            normalized_gradient,  # Normalized gradient (what gets integrated)
             setpoint             # SND setpoint (without perturbation)
         ) = self.controller.update(cost)
         
@@ -194,7 +195,7 @@ class AdaptiveESCCallback(Callback):
             f"Reward: {mean_reward:+7.3f} ±{reward_std:5.3f} | "
             f"SND: {previous_snd:.4f} → {self.model.desired_snd.item():.4f} (Δ={update_step:+.4f}) | "
             f"Setpoint: {previous_setpoint:.4f} → {setpoint:.4f} (Δ={setpoint_change:+.4f}) | "
-            f"Grad: {gradient_estimate:+.5f} (RMS: {gradient_magnitude:.5f})"
+            f"Grad: {gradient_estimate:+.5f} (norm: {normalized_gradient:+.5f}, RMS: {gradient_magnitude:.5f})"
             + (f" [HIGH GAIN]" if using_high_gain else "")
         )
         
@@ -220,7 +221,8 @@ class AdaptiveESCCallback(Callback):
             "esc/perturbation_raw": perturbed_output - setpoint,
             
             # Controller internals
-            "esc/gradient_estimate": gradient_estimate,
+            "esc/gradient_raw": gradient_estimate,
+            "esc/gradient_estimate": normalized_gradient,
             "esc/gradient_magnitude": gradient_magnitude,
             "esc/hpf_output": hpf_output,
             "esc/integrator_state": self.controller.integral,

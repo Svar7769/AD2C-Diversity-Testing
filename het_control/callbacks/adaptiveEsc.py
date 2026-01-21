@@ -1,5 +1,5 @@
 """
-Extremum Seeking Control (ESC) implementation.
+Extremum Seeking Control (ESC) implementation with gradient normalization.
 A gradient-free optimization method that uses sinusoidal perturbations
 to estimate gradients and converge to optimal parameter values.
 """
@@ -76,10 +76,11 @@ class LowPassFilter:
 
 class ExtremumSeekingController:
     """
-    Extremum Seeking Controller for real-time optimization.
+    Extremum Seeking Controller with gradient normalization for real-time optimization.
     
     Uses sinusoidal perturbations to estimate gradients of an unknown cost function
-    and adjusts parameters to find the optimum.
+    and adjusts parameters to find the optimum. Normalizes gradient updates by their
+    RMS (similar to Adam optimizer) for more stable convergence.
     """
     
     def __init__(
@@ -91,8 +92,9 @@ class ExtremumSeekingController:
         initial_value: float,
         high_pass_cutoff: float,
         low_pass_cutoff: float,
-        use_adaptive_gain: bool = True,
-        min_output: float = 0.0
+        use_adaptive_gain: bool = False,
+        min_output: float = 0.0,
+        max_output: float = float('inf')
     ):
         """
         Args:
@@ -105,6 +107,7 @@ class ExtremumSeekingController:
             low_pass_cutoff: Low-pass filter cutoff (rad/s)
             use_adaptive_gain: Whether to use adaptive gain switching
             min_output: Minimum allowed output value
+            max_output: Maximum allowed output value
         """
         self.dt = sampling_period
         self.omega = dither_frequency  # Perturbation frequency
@@ -113,6 +116,7 @@ class ExtremumSeekingController:
         self.theta_0 = initial_value  # Initial setpoint
         self.use_adaptive = use_adaptive_gain
         self.min_output = min_output
+        self.max_output = max_output
         
         # Initialize filters
         self.hpf = HighPassFilter(sampling_period, high_pass_cutoff)
@@ -122,7 +126,7 @@ class ExtremumSeekingController:
         self.phase = 0.0  # Current phase of perturbation (wt)
         self.integral = 0.0  # Integrator state
         
-        # Adaptive gain parameters
+        # Gradient normalization parameters (RMS estimation)
         self.m2 = 0.0  # Second moment estimate (for RMS)
         self.beta = 0.8  # Exponential moving average coefficient
         self.epsilon = 1e-8  # Small constant to prevent division by zero
@@ -142,60 +146,69 @@ class ExtremumSeekingController:
             Tuple containing:
                 - output: Perturbed parameter value (setpoint + dither)
                 - hpf_output: High-pass filter output
-                - lpf_output: Low-pass filter output (gradient estimate)
+                - lpf_output: Low-pass filter output (raw gradient estimate)
                 - gradient_magnitude: RMS of gradient estimate
-                - gradient: Raw gradient estimate
+                - normalized_gradient: Gradient after normalization (what gets integrated)
                 - setpoint: Current setpoint (without perturbation)
         """
         # 1. High-pass filter to remove DC component from cost signal
         hpf_output = self.hpf.apply(cost)
         
         # 2. Demodulate by multiplying with sin(wt)
-        demodulated = hpf_output * np.sin(self.phase)
+        demodulated = (2.0 / self.a) * hpf_output * np.sin(self.phase)        
         
         # 3. Low-pass filter to extract gradient estimate
         lpf_output = self.lpf.apply(demodulated)
         
-        # 4. Compute gradient magnitude using exponential moving average of squared gradient
+        # 4. Compute gradient RMS using exponential moving average of squared gradient
         self.m2 = self.beta * self.m2 + (1.0 - self.beta) * (lpf_output ** 2)
         gradient_magnitude = np.sqrt(self.m2)
         
-        # 5. Determine integrator gain (adaptive or fixed)
+        # 5. Normalize gradient by RMS (prevents large updates with noisy gradients)
+        if gradient_magnitude > self.epsilon:
+            normalized_gradient = lpf_output / (gradient_magnitude + self.epsilon)
+        else:
+            # When RMS is very small, use raw gradient (beginning of training)
+            normalized_gradient = lpf_output
+        
+        # 6. Determine integrator gain (adaptive or fixed)
         if self.use_adaptive:
             # Use high gain when gradient is large, base gain when gradient is small
             gain = self.high_gain if gradient_magnitude > self.gradient_threshold else self.k
         else:
             gain = self.k
         
-        # 6. Integrate gradient to update parameter estimate
-        self.integral += gain * lpf_output * self.dt
+        # 7. Integrate normalized gradient to update parameter estimate
+        self.integral += gain * normalized_gradient * self.dt
         
-        # 7. Compute setpoint (base parameter value without perturbation)
+        # 8. Compute setpoint (base parameter value without perturbation)
         setpoint_raw = self.theta_0 + self.integral
         
-        # 8. Apply output constraints (clamping with anti-windup)
-        setpoint = max(setpoint_raw, self.min_output)
+        # 9. Apply output constraints (clamping with anti-windup)
+        setpoint = np.clip(setpoint_raw, self.min_output, self.max_output)
         
-        # 9. Anti-windup: correct integrator if output is saturated
+        # 10. Anti-windup: correct integrator if output is saturated
         if setpoint_raw < self.min_output:
             self.integral = self.min_output - self.theta_0
+        elif setpoint_raw > self.max_output:
+            self.integral = self.max_output - self.theta_0
         
-        # 10. Add perturbation to get final output
+        # 11. Add perturbation to get final output
         perturbation = self.a * np.sin(self.phase)
         output = setpoint + perturbation
         
-        # 11. Update phase for next iteration
+        # 12. Update phase for next iteration
         self.phase += self.omega * self.dt
         if self.phase > 2 * np.pi:
             self.phase -= 2 * np.pi
         
         return (
-            output,           # Total output (setpoint + perturbation)
-            hpf_output,       # High-pass filtered cost
-            lpf_output,       # Gradient estimate
+            output,              # Total output (setpoint + perturbation)
+            hpf_output,          # High-pass filtered cost
+            lpf_output,          # Raw gradient estimate (before normalization)
             gradient_magnitude,  # RMS of gradient
-            lpf_output,       # Raw gradient (same as lpf_output)
-            setpoint          # Base setpoint (no perturbation)
+            normalized_gradient, # Normalized gradient (what gets integrated)
+            setpoint             # Base setpoint (no perturbation)
         )
     
     def reset(self):
