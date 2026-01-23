@@ -23,12 +23,12 @@ MAX_FRAMES = 1_200_000
 CHECKPOINT_INTERVAL = 1_200_000
 
 # Initial SND
-DESIRED_SND = -1.0
+DESIRED_SND = 1.0
 
 # Task-specific overrides
 TASK_OVERRIDES = {
-    "n_agents": 2,
-    "agents_with_same_goal": 1,
+    "n_agents": 3,
+    "agents_with_same_goal": 3,
 }
 
 # ESC Controller Configuration

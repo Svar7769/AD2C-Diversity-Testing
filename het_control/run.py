@@ -99,38 +99,38 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
         
         # Add ESC controller
         callbacks.append(
-            # ESCCallback(
-            #     control_group=control_group,
-            #     initial_snd=esc_config.get("initial_snd", 0.0),
-            #     dither_magnitude=esc_config.get("dither_magnitude", 0.2),
-            #     dither_frequency_rad_s=esc_config.get("dither_frequency", 1.0),
-            #     integrator_gain=esc_config.get("integrator_gain", -0.001),
-            #     high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.5),
-            #     low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
-            #     use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
-            #     sampling_period=esc_config.get("sampling_period", 1.0),
-            #     min_snd=esc_config.get("min_snd", 0.0),
-            #     max_snd=esc_config.get("max_snd", 3.0)
-            # )
-
-            SmartESCCallback(
+            ESCCallback(
                 control_group=control_group,
-                initial_snd= 0.0,
-                dither_magnitude=0.2,
-                dither_frequency_rad_s= 1.0,
-                integrator_gain= -1.0,
-                high_pass_cutoff_rad_s= 0.5,
-                low_pass_cutoff_rad_s= 0.1,
-                sampling_period= 1.0,
-                min_snd= 0.0,
-                max_snd= 3.0,
-                # Smart adaptive features
-                enable_adaptive_dither= True,
-                enable_adaptive_gain= True,
-                enable_state_machine= True,
-                convergence_patience= 5,
-                exploration_steps= 10,
+                initial_snd=esc_config.get("initial_snd", 0.0),
+                dither_magnitude=esc_config.get("dither_magnitude", 0.2),
+                dither_frequency_rad_s=esc_config.get("dither_frequency", 1.0),
+                integrator_gain=esc_config.get("integrator_gain", -0.001),
+                high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.5),
+                low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
+                use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
+                sampling_period=esc_config.get("sampling_period", 1.0),
+                min_snd=esc_config.get("min_snd", 0.0),
+                max_snd=esc_config.get("max_snd", 3.0)
             )
+
+            # SmartESCCallback(
+            #     control_group=control_group,
+            #     initial_snd= 1.0,
+            #     dither_magnitude=0.2,
+            #     dither_frequency_rad_s= 1.0,
+            #     integrator_gain= -1.0,
+            #     high_pass_cutoff_rad_s= 0.5,
+            #     low_pass_cutoff_rad_s= 0.1,
+            #     sampling_period= 1.0,
+            #     min_snd= 0.0,
+            #     max_snd= 3.0,
+            #     # Smart adaptive features
+            #     enable_adaptive_dither= True,
+            #     enable_adaptive_gain= True,
+            #     enable_state_machine= True,
+            #     convergence_patience= 5,
+            #     exploration_steps= 10,
+            # )
         )
         
         # Add ESC trajectory logger
