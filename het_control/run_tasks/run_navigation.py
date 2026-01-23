@@ -19,11 +19,11 @@ CONFIG_NAME = "navigation_ippo"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/navigation_ippo/"
 
 # Training parameters
-MAX_FRAMES = 1_200_000
-CHECKPOINT_INTERVAL = 1_200_000
+MAX_FRAMES = 6_000_000
+CHECKPOINT_INTERVAL = 6_000_000
 
 # Initial SND
-DESIRED_SND = 1.0
+DESIRED_SND = 0.5
 
 # Task-specific overrides
 TASK_OVERRIDES = {

@@ -7,16 +7,16 @@ esc_controller:
   control_group: "agents"
   
   # Initial SND value
-  initial_snd: 0.0
+  initial_snd: 0.5
   
   # Dither signal parameters
   dither_magnitude: 0.2      # Amplitude of dither signal
   dither_frequency: 1.0      # Frequency in rad/s
   
   # Controller gains and filters
-  integrator_gain: -0.01    # Integrator gain (negative for minimization)
-  high_pass_cutoff: 0.5      # High-pass filter cutoff in rad/s
-  low_pass_cutoff: 0.1       # Low-pass filter cutoff in rad/s
+  integrator_gain: -5.0    # Integrator gain (negative for minimization)
+  high_pass_cutoff: 1.0      # High-pass filter cutoff in rad/s
+  low_pass_cutoff: 1.0       # Low-pass filter cutoff in rad/s
   
   # Adaptive control
   use_adaptive_gain: true    # Enable adaptive gain control
