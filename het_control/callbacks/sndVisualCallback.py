@@ -267,16 +267,10 @@ class SNDVisualizerCallback(Callback):
                 dim=0
             )  # Shape: [*batch_size, n_agents, n_features]
             
-            # Compute actions that each agent would take for these observations
-            # EXACT same method as SNDCallback
-            agent_actions = []
-            for i in range(self.model.n_agents):
-                action = self.model._forward(
-                    obs, 
-                    agent_index=i, 
-                    compute_estimate=False
-                ).get(self.model.out_key)
-                agent_actions.append(action)
+            # Compute all agents' actions at once to avoid batch-size mismatches
+            out_td = self.model._forward(obs, agent_index=None, compute_estimate=False)
+            actions = out_td.get(self.model.out_key)
+            agent_actions = list(actions.unbind(dim=-2))
             
             # Generate visualizations using the manager
             # The manager will compute distances using compute_behavioral_distance

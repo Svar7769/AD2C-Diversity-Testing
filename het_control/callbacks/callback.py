@@ -1,6 +1,3 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
 
 from typing import List
 
@@ -79,14 +76,10 @@ class SndCallback(Callback):
                 [rollout.select((group, "observation")) for rollout in rollouts], dim=0
             )  # tensor of shape [*batch_size, n_agents, n_features]
             model = get_het_model(policy)
-            agent_actions = []
-            # Compute actions that each agent would take in this obs
-            for i in range(model.n_agents):
-                agent_actions.append(
-                    model._forward(obs, agent_index=i, compute_estimate=False).get(
-                        model.out_key
-                    )
-                )
+            # Compute all agents' actions at once to avoid batch-size mismatches
+            out_td = model._forward(obs, agent_index=None, compute_estimate=False)
+            actions = out_td.get(model.out_key)
+            agent_actions = list(actions.unbind(dim=-2))
             # Compute SND
             distance = compute_behavioral_distance(agent_actions, just_mean=True)
             self.experiment.logger.log(

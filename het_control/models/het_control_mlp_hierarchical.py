@@ -1,6 +1,3 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
 
 from __future__ import annotations
 
@@ -8,28 +5,25 @@ from dataclasses import dataclass, MISSING
 from typing import Type, Sequence, Optional
 
 import torch
+import torch.nn.functional as F
+from torch import nn
 from tensordict import TensorDictBase
 from tensordict.nn import NormalParamExtractor
-from torch import nn
 from torchrl.modules import MultiAgentMLP
 
 from benchmarl.models.common import Model, ModelConfig
 from het_control.callbacks.snd import compute_behavioral_distance
-from het_control.callbacks.utils import overflowing_logits_norm
 from .utils import squash
 
 
 class HetControlMlpHierarchical(Model):
-    """Three-part hierarchical heterogeneous control model.
-    
-    Architecture:
-    - Shared MLP: Team-level baseline policy
-    - Subteam MLPs: K behavioral clusters learned via soft assignment
-    - Agent MLPs: Individual agent specializations
-    
-    Final output = shared_weight * shared + subteam_weight * subteam[assignment] + agent_weight * agent
     """
-    
+    Hierarchical heterogeneous control policy:
+      - Shared team baseline
+      - K subteam (role) policies
+      - Agent-specific specialists
+    """
+
     def __init__(
         self,
         activation_class: Type[nn.Module],
@@ -42,64 +36,37 @@ class HetControlMlpHierarchical(Model):
         subteam_tau: float,
         bootstrap_from_desired_snd: bool,
         process_shared: bool,
-        shared_weight_init: float,
         subteam_weight_init: float,
         agent_weight_init: float,
         use_hard_assignment: bool,
+        selective_subteam_sharing: bool = False,
         normalize_weights: bool = False,
         clip_weights: bool = True,
+        use_layer_norm: bool = True,
         **kwargs,
     ):
-        """Three-part hierarchical DiCo policy model.
-        
-        Args:
-            activation_class (Type[nn.Module]): activation class to be used.
-            num_cells (int or Sequence[int]): number of cells of every layer in between the input and output.
-            n_subteams (int): Number of behavioral subteam clusters (typically 2-4).
-            desired_snd (float): The desired SND diversity.
-            probabilistic (bool): Whether the model has stochastic actions or not.
-            scale_mapping (str, optional): Type of mapping to use to make the std_dev output of the policy positive
-                (choices: "softplus", "exp", "relu", "biased_softplus_1")
-            tau (float): The soft-update parameter of the estimated diversity. Must be between 0 and 1.
-            subteam_tau (float): Temperature for soft subteam assignment. Lower values make assignments harder.
-            bootstrap_from_desired_snd (bool): Whether on the first iteration the estimated SND should be bootstrapped
-                from the desired snd (True) or from the measured SND (False).
-            process_shared (bool): Whether to process the homogeneous part of the policy with a tanh squashing operation.
-            shared_weight_init (float): Initial weight for shared component contribution.
-            subteam_weight_init (float): Initial weight for subteam component contribution.
-            agent_weight_init (float): Initial weight for agent-specific component contribution.
-            use_hard_assignment (bool): If True, use hard (argmax) subteam assignment instead of soft (softmax).
-            normalize_weights (bool): If True, normalize hierarchical weights to sum to 1.
-            clip_weights (bool): If True, clip hierarchical weights to be non-negative.
-        """
-        # Store attributes BEFORE calling super().__init__() because _perform_checks() needs them
+        # Required for BenchMARL checks
         self.num_cells = num_cells
         self.activation_class = activation_class
         self.probabilistic = probabilistic
-        self.scale_mapping = scale_mapping
+        self.n_subteams = n_subteams
         self.tau = tau
         self.subteam_tau = subteam_tau
         self.bootstrap_from_desired_snd = bootstrap_from_desired_snd
         self.process_shared = process_shared
-        self.n_subteams = n_subteams
         self.use_hard_assignment = use_hard_assignment
+        self.selective_subteam_sharing = selective_subteam_sharing
         self.normalize_weights = normalize_weights
         self.clip_weights = clip_weights
-        
-        # Now call parent init which will trigger _perform_checks()
+
         super().__init__(**kwargs)
 
-        # Diversity tracking buffers
-        self.register_buffer(
-            name="desired_snd",
-            tensor=torch.tensor([desired_snd], device=self.device, dtype=torch.float),
-        )
-        self.register_buffer(
-            name="estimated_snd",
-            tensor=torch.tensor([float("nan")], device=self.device, dtype=torch.float),
-        )
+        # --------------------------------------------------
+        # Buffers
+        # --------------------------------------------------
+        self.register_buffer("desired_snd", torch.tensor([desired_snd], device=self.device))
+        self.register_buffer("estimated_snd", torch.tensor([float("nan")], device=self.device))
 
-        # Scale extractor for probabilistic policies
         self.scale_extractor = (
             NormalParamExtractor(scale_mapping=scale_mapping)
             if scale_mapping is not None
@@ -108,156 +75,81 @@ class HetControlMlpHierarchical(Model):
 
         self.input_features = self.input_leaf_spec.shape[-1]
         self.output_features = self.output_leaf_spec.shape[-1]
+        self.act_dim = self.output_features // 2 if probabilistic else self.output_features
 
-        # 1. SHARED MLP (Team-level baseline)
+        # --------------------------------------------------
+        # Input normalization
+        # --------------------------------------------------
+        self.input_norm = (
+            nn.LayerNorm(self.input_features, device=self.device)
+            if use_layer_norm
+            else nn.Identity()
+        )
+
+        # --------------------------------------------------
+        # Shared baseline (team policy)
+        # --------------------------------------------------
         self.shared_mlp = MultiAgentMLP(
             n_agent_inputs=self.input_features,
             n_agent_outputs=self.output_features,
             n_agents=self.n_agents,
             centralised=False,
-            share_params=True,  # Parameter-shared across all agents
+            share_params=True,
             device=self.device,
-            activation_class=self.activation_class,
-            num_cells=self.num_cells,
+            activation_class=activation_class,
+            num_cells=num_cells,
         )
 
-        # 2. SUBTEAM MLPs (Behavioral clusters)
-        agent_outputs = (
-            self.output_features // 2 if self.probabilistic else self.output_features
+        # --------------------------------------------------
+        # Agent-specific specialists
+        # --------------------------------------------------
+        self.agent_mlps = MultiAgentMLP(
+            n_agent_inputs=self.input_features,
+            n_agent_outputs=self.act_dim,
+            n_agents=self.n_agents,
+            centralised=False,
+            share_params=False,
+            device=self.device,
+            activation_class=activation_class,
+            num_cells=num_cells,
         )
-        
-        # Create K subteam networks (parameter-shared within each subteam)
+
+        # --------------------------------------------------
+        # Subteam (role) policies
+        # --------------------------------------------------
         self.subteam_mlps = nn.ModuleList([
             MultiAgentMLP(
                 n_agent_inputs=self.input_features,
-                n_agent_outputs=agent_outputs,
+                n_agent_outputs=self.act_dim,
                 n_agents=self.n_agents,
                 centralised=False,
-                share_params=True,  # Shared within this subteam
+                share_params=True,
                 device=self.device,
-                activation_class=self.activation_class,
-                num_cells=self.num_cells,
+                activation_class=activation_class,
+                num_cells=num_cells,
             )
-            for _ in range(self.n_subteams)
+            for _ in range(n_subteams)
         ])
         
-        # Subteam assignment network (learns behavioral clustering)
-        # This is shared across all agents to learn global clustering patterns
-        self.assignment_network = nn.Sequential(
-            nn.Linear(self.input_features, self.num_cells[0], device=self.device),
-            self.activation_class(),
-            nn.Linear(self.num_cells[0], self.n_subteams, device=self.device),
+
+        # --------------------------------------------------
+        # Routing network (per-agent)
+        # --------------------------------------------------
+        self.assignment_net = nn.Sequential(
+            nn.Linear(self.input_features, num_cells[0], device=self.device),
+            activation_class(),
+            nn.Linear(num_cells[0], n_subteams, device=self.device),
         )
 
-        # 3. AGENT-SPECIFIC MLPs (Individual specialization)
-        self.agent_mlps = MultiAgentMLP(
-            n_agent_inputs=self.input_features,
-            n_agent_outputs=agent_outputs,
-            n_agents=self.n_agents,
-            centralised=False,
-            share_params=False,  # NOT parameter-shared - agent-specific
-            device=self.device,
-            activation_class=self.activation_class,
-            num_cells=self.num_cells,
-        )
-        
-        # Learnable hierarchical composition weights
-        self.register_parameter(
-            "shared_weight",
-            nn.Parameter(torch.tensor(shared_weight_init, device=self.device))
-        )
-        self.register_parameter(
-            "subteam_weight", 
-            nn.Parameter(torch.tensor(subteam_weight_init, device=self.device))
-        )
-        self.register_parameter(
-            "agent_weight",
-            nn.Parameter(torch.tensor(agent_weight_init, device=self.device))
-        )
+        # --------------------------------------------------
+        # Learnable composition weights
+        # --------------------------------------------------
+        self.w_subteam = nn.Parameter(torch.tensor(subteam_weight_init, device=self.device))
+        self.w_agent = nn.Parameter(torch.tensor(agent_weight_init, device=self.device))
 
-    def _perform_checks(self):
-        """Perform BenchMARL-specific validation checks."""
-        super()._perform_checks()
-
-        if self.centralised or not self.input_has_agent_dim:
-            raise ValueError(f"{self.__class__.__name__} can only be used for policies")
-
-        if self.input_has_agent_dim and self.input_leaf_spec.shape[-2] != self.n_agents:
-            raise ValueError(
-                "If the MLP input has the agent dimension,"
-                " the second to last spec dimension should be the number of agents"
-            )
-        if (
-            self.output_has_agent_dim
-            and self.output_leaf_spec.shape[-2] != self.n_agents
-        ):
-            raise ValueError(
-                "If the MLP output has the agent dimension,"
-                " the second to last spec dimension should be the number of agents"
-            )
-        
-        if self.n_subteams < 1:
-            raise ValueError(f"n_subteams must be >= 1, got {self.n_subteams}")
-        
-        if not (0.0 <= self.tau <= 1.0):
-            raise ValueError(f"tau must be in [0, 1], got {self.tau}")
-        
-        if self.subteam_tau <= 0:
-            raise ValueError(f"subteam_tau must be positive, got {self.subteam_tau}")
-        
-        if len(self.num_cells) == 0:
-            raise ValueError(f"num_cells must contain at least one element, got {self.num_cells}")
-
-    def get_hierarchical_weights(self):
-        """Get the current hierarchical weights (optionally normalized or clipped)."""
-        shared_w = self.shared_weight
-        subteam_w = self.subteam_weight
-        agent_w = self.agent_weight
-        
-        # Clip weights to be non-negative if enabled
-        if self.clip_weights:
-            shared_w = torch.clamp(shared_w, min=0.0)
-            subteam_w = torch.clamp(subteam_w, min=0.0)
-            agent_w = torch.clamp(agent_w, min=0.0)
-        
-        # Normalize weights to sum to 1 if enabled
-        if self.normalize_weights:
-            total_weight = shared_w + subteam_w + agent_w + 1e-8  # Add epsilon for stability
-            shared_w = shared_w / total_weight
-            subteam_w = subteam_w / total_weight
-            agent_w = agent_w / total_weight
-        
-        return shared_w, subteam_w, agent_w
-
-    def compute_subteam_assignment(
-        self, 
-        input: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute soft (or hard) assignment to subteams.
-        
-        Args:
-            input: [*batch, n_agents, n_features]
-            
-        Returns:
-            assignment_weights: [*batch, n_agents, n_subteams]
-        """
-        # Compute logits for each agent's subteam assignment
-        assignment_logits = self.assignment_network(input)  # [*batch, n_agents, n_subteams]
-        
-        if self.use_hard_assignment:
-            # Hard assignment (one-hot) - useful for interpretability
-            assignment_idx = torch.argmax(assignment_logits, dim=-1)
-            assignment_weights = torch.nn.functional.one_hot(
-                assignment_idx, num_classes=self.n_subteams
-            ).float()
-        else:
-            # Soft assignment with temperature - allows gradient flow
-            assignment_weights = torch.softmax(
-                assignment_logits / self.subteam_tau, dim=-1
-            )
-        
-        return assignment_weights
-
+    # ======================================================
+    # Forward
+    # ======================================================
     def _forward(
         self,
         tensordict: TensorDictBase,
@@ -265,166 +157,144 @@ class HetControlMlpHierarchical(Model):
         update_estimate: bool = True,
         compute_estimate: bool = True,
     ) -> TensorDictBase:
-        """Forward pass with three-part hierarchical composition.
-        
-        CRITICAL: This method must NOT add any keys to the tensordict except self.out_key.
-        Adding other keys causes batch size mismatches during training when minibatches
-        have different sizes (e.g., 4096 vs 2656).
-        """
-        
-        # Gather input
-        input = tensordict.get(self.in_key)  # [*batch, n_agents, n_features]
-        
-        # ========== 1. SHARED OUTPUT (Team baseline) ==========
-        shared_out = self.shared_mlp.forward(input)
-        shared_out = self.process_shared_out(shared_out)
-        
-        # ========== 2. SUBTEAM OUTPUT (Behavioral clusters) ==========
-        # Compute soft/hard assignments to subteams
-        subteam_assignments = self.compute_subteam_assignment(input)  # [*batch, n_agents, n_subteams]
-        
-        # Get outputs from all subteam networks
-        subteam_outputs = []
-        for subteam_mlp in self.subteam_mlps:
-            subteam_out = subteam_mlp.forward(input)
-            if self.probabilistic:
-                # Only use mean component from subteams (variance comes from shared)
-                subteam_out, _ = subteam_out.chunk(2, -1)
-            subteam_outputs.append(subteam_out)
-        
-        # Stack and compute weighted combination
-        subteam_stack = torch.stack(subteam_outputs, dim=-2)  # [*batch, n_agents, n_subteams, action_dim]
-        # Weighted sum over subteams: each agent's output is a mixture of subteam outputs
-        subteam_out = torch.einsum(
-            '...nsa,...ns->...na',
-            subteam_stack,
-            subteam_assignments
-        )  # [*batch, n_agents, action_dim]
-        
-        # ========== 3. AGENT-SPECIFIC OUTPUT (Individual specialization) ==========
-        if agent_index is None:
-            # Gather outputs for all agents
-            agent_out = self.agent_mlps.forward(input)
-        else:
-            # Gather output for specific agent (used during diversity estimation)
-            agent_out = self.agent_mlps.agent_networks[agent_index].forward(input)
-        
-        if self.probabilistic:
-            # Only use mean component (variance comes from shared)
-            agent_out, _ = agent_out.chunk(2, -1)
-        
-        # ========== DIVERSITY SCALING (DiCo mechanism) ==========
-        if (
-            self.desired_snd > 0
-            and torch.is_grad_enabled()  # we are training
-            and compute_estimate
-            and self.n_agents > 1
-        ):
-            # Update \widehat{SND}
-            distance = self.estimate_snd(input)
-            if update_estimate:
-                self.estimated_snd[:] = distance.detach()
-        else:
-            distance = self.estimated_snd
-            
-        if self.desired_snd == 0:
-            scaling_ratio = 0.0
-        elif (
-            self.desired_snd == -1  # Unconstrained networks
-            or distance.isnan().any()  # First iteration
-            or self.n_agents == 1
-        ):
-            scaling_ratio = 1.0
-        else:  # DiCo scaling
-            scaling_ratio = torch.where(
-                distance != self.desired_snd,
-                self.desired_snd / distance,
-                torch.ones_like(distance),
-            )
-        
-        # ========== HIERARCHICAL COMPOSITION ==========
-        # Get potentially normalized/clipped weights
-        shared_weight, subteam_weight, agent_weight = self.get_hierarchical_weights()
-        
-        if self.probabilistic:
-            shared_loc, shared_scale = shared_out.chunk(2, -1)
-            
-            # Combine: weighted_shared + weighted_subteam + weighted_agent
-            # Only subteam and agent components are scaled by diversity
-            agent_loc = (
-                shared_weight * shared_loc +
-                subteam_weight * subteam_out * scaling_ratio +
-                agent_weight * agent_out * scaling_ratio
-            )
-            
-            # Use shared scale for all components
-            agent_scale = shared_scale
-            out = torch.cat([agent_loc, agent_scale], dim=-1)
-        else:
-            # Deterministic case
-            out = (
-                shared_weight * shared_out +
-                subteam_weight * subteam_out * scaling_ratio +
-                agent_weight * agent_out * scaling_ratio
-            )
-        
-        # ========== STORE OUTPUT IN TENSORDICT ==========
-        # CRITICAL: Only set self.out_key - do NOT add any other keys!
-        # Any additional keys will cause batch size mismatch errors during training
-        # when minibatches have different sizes (e.g., 4096 vs 2656 for 60000/4096).
-        tensordict.set(self.out_key, out)
-        
-        return tensordict
 
-    def process_shared_out(self, logits: torch.Tensor):
-        """Process shared output (same as original HetControlMlpEmpirical)."""
-        if not self.probabilistic and self.process_shared:
-            return squash(
-                logits,
-                action_spec=self.action_spec[self.agent_group, "action"],
+        obs = self.input_norm(tensordict.get(self.in_key))  # [*, N, obs_dim]
+
+        # ---------------- Shared ----------------
+        shared_out = self.shared_mlp(obs)
+
+        if self.probabilistic:
+            mu_shared, sigma_shared = self.scale_extractor(shared_out)
+        else:
+            mu_shared, sigma_shared = shared_out, None
+
+        if self.process_shared:
+            mu_shared = squash(
+                mu_shared,
+                self.action_spec[self.agent_group, "action"],
                 clamp=False,
             )
-        elif self.probabilistic:
-            loc, scale = self.scale_extractor(logits)
-            if self.process_shared:
-                loc = squash(
-                    loc,
-                    action_spec=self.action_spec[self.agent_group, "action"],
-                    clamp=False,
-                )
-            return torch.cat([loc, scale], dim=-1)
-        else:
-            return logits
 
-    def estimate_snd(self, obs: torch.Tensor):
-        """Update \widehat{SND} using behavioral distance between agent policies."""
-        agent_actions = []
-        # Gather what actions each agent would take given the obs tensor
-        for agent_net in self.agent_mlps.agent_networks:
-            agent_outputs = agent_net(obs)
-            agent_actions.append(agent_outputs)
-
-        # Compute the SND of these unscaled agent-specific policies
-        distance = (
-            compute_behavioral_distance(agent_actions=agent_actions, just_mean=True)
-            .mean()
-            .unsqueeze(-1)
+        # ---------------- Agent specialists ----------------
+        mu_agent = (
+            self.agent_mlps(obs)
+            if agent_index is None
+            else self.agent_mlps.agent_networks[agent_index](obs)
         )
-        
-        if self.estimated_snd.isnan().any():  # First iteration
-            distance = self.desired_snd if self.bootstrap_from_desired_snd else distance
+
+        if agent_index is not None:
+            mu_agent = mu_agent[..., agent_index, :]
+
+        # ---------------- Subteam routing ----------------
+        logits = self.assignment_net(obs)
+
+        if self.selective_subteam_sharing:
+            assign_w = F.one_hot(logits.argmax(-1), self.n_subteams).float()
         else:
-            # Soft update of \widehat{SND}
-            distance = (1 - self.tau) * self.estimated_snd + self.tau * distance
+            if self.training and self.use_hard_assignment:
+                assign_w = F.gumbel_softmax(logits, tau=self.subteam_tau, hard=True)
+            elif self.use_hard_assignment:
+                assign_w = F.one_hot(logits.argmax(-1), self.n_subteams).float()
+            else:
+                assign_w = torch.softmax(logits / self.subteam_tau, dim=-1)
 
-        return distance
+        sub_outs = torch.stack([mlp(obs) for mlp in self.subteam_mlps], dim=-2)
+        mu_subteam = torch.einsum("...nka,...nk->...na", sub_outs, assign_w)
+
+        if agent_index is not None:
+            mu_subteam = mu_subteam[..., agent_index, :]
+
+        # ---------------- SND scaling ----------------
+        if agent_index is None:
+            scaling = self._get_snd_scaling(mu_agent, update_estimate, compute_estimate)
+        else:
+            scaling = 1.0
+
+        wk, wa = self.hierarchical_weights
+
+        if agent_index is not None:
+            mu_shared = mu_shared[..., agent_index, :]
+            if sigma_shared is not None:
+                sigma_shared = sigma_shared[..., agent_index, :]
+
+        # ---------------- Final composition ----------------
+        deviation = wk * mu_subteam + wa * mu_agent
+        mu_final = mu_shared + scaling * deviation
+
+        if self.probabilistic:
+            out = torch.cat([mu_final, sigma_shared], dim=-1)
+        else:
+            out = mu_final
+
+        # ✅ CRITICAL: write in-place (NO clone)
+        tensordict.set(self.out_key, out)
+        return tensordict
+
+    # ======================================================
+    # Utilities
+    # ======================================================
+    @property
+    def hierarchical_weights(self):
+        wk, wa = self.w_subteam, self.w_agent
+        if self.clip_weights:
+            wk, wa = wk.clamp(min=0), wa.clamp(min=0)
+        if self.normalize_weights:
+            s = wk + wa + 1e-8
+            return wk / s, wa / s
+        return wk, wa
+
+    def get_hierarchical_weights(self):
+        """Compatibility helper for callbacks expecting explicit weight access."""
+        return self.hierarchical_weights
+
+    def compute_subteam_assignment(self, obs: torch.Tensor) -> torch.Tensor:
+        """
+        Compute per-agent subteam assignment weights from observations.
+        Uses deterministic routing for logging.
+        """
+        normalized_obs = self.input_norm(obs)
+        logits = self.assignment_net(normalized_obs)
+        if self.selective_subteam_sharing or self.use_hard_assignment:
+            return F.one_hot(logits.argmax(-1), self.n_subteams).float()
+        return torch.softmax(logits / self.subteam_tau, dim=-1)
+
+    def _get_snd_scaling(self, agent_means, update, compute):
+        if (
+            self.desired_snd > 0
+            and torch.is_grad_enabled()
+            and compute
+            and agent_means is not None
+            and self.n_agents > 1
+        ):
+            acts = list(agent_means.unbind(dim=-2))
+            snd = compute_behavioral_distance(acts, just_mean=True).mean().unsqueeze(-1)
+
+            if update:
+                if self.estimated_snd.isnan().any():
+                    self.estimated_snd[:] = (
+                        self.desired_snd if self.bootstrap_from_desired_snd else snd.detach()
+                    )
+                else:
+                    self.estimated_snd[:] = (
+                        (1 - self.tau) * self.estimated_snd + self.tau * snd.detach()
+                    )
+
+        if self.desired_snd <= 0 or self.estimated_snd.isnan().any():
+            return 1.0
+
+        return self.desired_snd / self.estimated_snd
+
+    def _perform_checks(self):
+        super()._perform_checks()
+        if self.centralised or not self.input_has_agent_dim:
+            raise ValueError("HetControlMlpHierarchical must be decentralized.")
 
 
+# ==========================================================
+# Config
+# ==========================================================
 @dataclass
 class HetControlMlpHierarchicalConfig(ModelConfig):
-    """Configuration for three-part hierarchical heterogeneous control model."""
-    
-    # Required parameters (MISSING = must be set)
     activation_class: Type[nn.Module] = MISSING
     num_cells: Sequence[int] = MISSING
     desired_snd: float = MISSING
@@ -433,18 +303,15 @@ class HetControlMlpHierarchicalConfig(ModelConfig):
     process_shared: bool = MISSING
     probabilistic: Optional[bool] = MISSING
     scale_mapping: Optional[str] = MISSING
-    
-    # Subteam clustering parameters (with defaults)
+
     n_subteams: int = 3
     subteam_tau: float = 0.1
     use_hard_assignment: bool = False
-    
-    # Hierarchical composition weights (with defaults)
-    shared_weight_init: float = 1.0
-    subteam_weight_init: float = 0.5
+    selective_subteam_sharing: bool = False
+
+    subteam_weight_init: float = 0.25
     agent_weight_init: float = 0.25
-    
-    # Weight processing options (with defaults)
+
     normalize_weights: bool = False
     clip_weights: bool = True
 

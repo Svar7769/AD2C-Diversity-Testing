@@ -30,9 +30,9 @@ from het_control.callbacks.callback import (
     TagCurriculum
 )
 from het_control.callbacks.esc_callback import ESCCallback
-from het_control.callbacks.sndESLogger import TrajectorySNDLoggerCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
 from het_control.callbacks.subteam_assignment_logger import SubteamAssignmentLoggerCallback
+from het_control.callbacks.hierarchical_metrics_logger import HierarchicalMetricsLoggerCallback
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
 from het_control.models.het_control_mlp_hierarchical import HetControlMlpHierarchicalConfig 
@@ -232,10 +232,7 @@ def get_experiment(
                 max_snd=esc_config.get("max_snd", 3.0)
             )
         )
-        
-        # Add ESC trajectory logger
-        callbacks.append(TrajectorySNDLoggerCallback(control_group=control_group))
-        
+                
         # Add action space loss
         callbacks.append(
             ActionSpaceLoss(
@@ -257,9 +254,10 @@ def get_experiment(
         control_group = esc_config.get("control_group", "agents") if esc_config else "agents"
         log_interval = esc_config.get("subteam_log_interval", 10) if esc_config else 10
         callbacks.append(
-            SubteamAssignmentLoggerCallback(
+            HierarchicalMetricsLoggerCallback(
                 control_group=control_group,
-                log_interval=log_interval
+                log_interval=log_interval,
+                # log_subteam_details=log_subteam_details,
             )
         )
     
@@ -331,7 +329,7 @@ def run_experiment(
         
         # Print what was loaded for debugging
         print("\n" + "="*80)
-        print("📄 Loaded ESC Configuration from file:")
+        print(" Loaded ESC Configuration from file:")
         print("="*80)
         for key, value in esc_config.items():
             print(f"  {key}: {value}")
@@ -378,11 +376,9 @@ def run_experiment(
         sys.argv.append(f"model.clip_weights={str(clip_w).lower()}")
         
         # Initial Weights
-        shared_w = esc_config.get('shared_weight_init', 1.0) if esc_config else 1.0
-        subteam_w = esc_config.get('subteam_weight_init', 0.5) if esc_config else 0.5
+        subteam_w = esc_config.get('subteam_weight_init', 0.5) if esc_config else 0.25
         agent_w = esc_config.get('agent_weight_init', 0.25) if esc_config else 0.25
         
-        sys.argv.append(f"model.shared_weight_init={shared_w}")
         sys.argv.append(f"model.subteam_weight_init={subteam_w}")
         sys.argv.append(f"model.agent_weight_init={agent_w}")
     
@@ -433,16 +429,16 @@ def run_experiment(
     print(f"Model type: {'Hierarchical' if use_hierarchical else 'Empirical'}")
     
     if use_hierarchical:
-        print(f"\n🏗️  Hierarchical Model Configuration:")
+        print(f"\n Hierarchical Model Configuration:")
         print(f"  Subteams: {n_subteams}")
         print(f"  Subteam tau: {subteam_tau}")
         print(f"  Hard assignment: {use_hard}")
         print(f"  Normalize weights: {normalize_w}")
         print(f"  Clip weights: {clip_w}")
-        print(f"  Weights (shared/subteam/agent): {shared_w}/{subteam_w}/{agent_w}")
+        print(f"  Weights (shared/subteam/agent): {subteam_w}/{agent_w}")
     
     if use_esc and esc_config:
-        print(f"\n🎛️  ESC Controller: ENABLED")
+        print(f"\n ESC Controller: ENABLED")
         print(f"Control group: {esc_config.get('control_group', 'agents')}")
         print(f"  Dither: ±{esc_config.get('dither_magnitude', 0.2)} @ {esc_config.get('dither_frequency', 1.0)} rad/s")
         print(f"  Integrator gain: {esc_config.get('integrator_gain', -0.001)}")
@@ -451,7 +447,7 @@ def run_experiment(
         print(f"  Adaptive gain: {esc_config.get('use_adaptive_gain', True)}")
         print(f"  SND bounds: [{esc_config.get('min_snd', 0.0)}, {esc_config.get('max_snd', 3.0)}]")
     else:
-        print(f"\n🎛️  ESC Controller: DISABLED")
+        print(f"\n ESC Controller: DISABLED")
     
     if task_overrides:
         print(f"\nTask overrides:")
@@ -477,14 +473,14 @@ def run_experiment(
     try:
         hydra_experiment()
         print("\n" + "="*80)
-        print("✅ Experiment finished successfully!")
+        print("Experiment finished successfully!")
         print("="*80 + "\n")
     except SystemExit:
         print("\n" + "="*80)
-        print("⚠️  Experiment terminated.")
+        print(" Experiment terminated.")
         print("="*80 + "\n")
     except Exception as e:
         print("\n" + "="*80)
-        print(f"❌ ERROR: An error occurred: {e}")
+        print(f" ERROR: An error occurred: {e}")
         print("="*80 + "\n")
         raise

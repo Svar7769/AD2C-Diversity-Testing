@@ -19,20 +19,22 @@ CONFIG_NAME = "navigation_ippo"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/navigation_ippo/"
 
 # Training parameters
-MAX_FRAMES = 1_200_000
-CHECKPOINT_INTERVAL = 1_200_000
+MAX_FRAMES = 3_000_000
+CHECKPOINT_INTERVAL = 3_000_000
 
 # Initial SND
 DESIRED_SND = -1.0
 
-# Task-specific overrides
+# Task-specific overriedþ`þ
 TASK_OVERRIDES = {
-    "n_agents": 2,
+    "n_agents": 3,
     "agents_with_same_goal": 1,
 }
 
+USE_HIERARCHICAL = True
+
 # ESC Controller Configuration
-USE_ESC = True  # Set to False to disable ESC
+USE_ESC = False  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Specific overrides for this task
@@ -86,5 +88,6 @@ if __name__ == "__main__":
         desired_snd=DESIRED_SND,
         task_overrides=TASK_OVERRIDES,
         esc_config_path=esc_config_to_use,
-        use_esc=USE_ESC
+        use_esc=USE_ESC,
+        use_hierarchical=USE_HIERARCHICAL
     )

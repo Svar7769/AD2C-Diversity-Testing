@@ -25,17 +25,16 @@ subteam_tau: 0.1
 # Soft assignment: better for learning, harder to interpret
 use_hard_assignment: false
 
+# If True, forces hard routing so only agents assigned to a team use that team's parameters
+selective_subteam_sharing: false
+
 # =============================================================================
 # Hierarchical Weight Initializations (Learnable Parameters)
 # =============================================================================
 
-# Initial contribution of the team-wide shared baseline
-# Recommended: 1.0 (provides stable foundation)
-shared_weight_init: 1.0
-
 # Initial contribution of the subteam cluster logic (scaled by DiCo)
 # Recommended: 0.3-0.5 (medium contribution)
-subteam_weight_init: 0.5
+subteam_weight_init: 0.25
 
 # Initial contribution of the individual agent logic (scaled by DiCo)
 # Recommended: 0.1-0.3 (smallest contribution for fine-tuning)
@@ -46,7 +45,7 @@ agent_weight_init: 0.25
 # =============================================================================
 
 # If True, normalize weights to sum to 1 (makes them interpretable as mixing coefficients)
-normalize_weights: false
+normalize_weights: true
 
 # If True, clip weights to be non-negative (prevents negative contributions)
 clip_weights: true
