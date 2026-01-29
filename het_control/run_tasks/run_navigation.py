@@ -30,16 +30,16 @@ ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 # Default ESC overrides (can be overridden from command line)
 DEFAULT_ESC_OVERRIDES = {
     "control_group": "agents",
-    "dither_magnitude": 0.2,      
+    "dither_magnitude": 0.05,      
     "dither_frequency": 1.0,    
     "high_pass_cutoff": 0.05,
-    "low_pass_cutoff": 0.5,
+    "low_pass_cutoff": 0.1,
     "integrator_gain": -10.0,
     "sampling_period": 1.0,       
     "min_snd": 0.0,
     "max_snd": 3.0,
     "use_adaptive_gain": True,    
-    "use_action_loss": False,
+    "use_action_loss": True,
     "action_loss_lr": 0.001,
 }
 

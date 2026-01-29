@@ -101,7 +101,8 @@ class ESCCallback(Callback):
                 high_pass_cutoff=self.esc_params["high_pass_cutoff"],
                 low_pass_cutoff=self.esc_params["low_pass_cutoff"],
                 use_adaptive_gain=self.esc_params["use_adaptive_gain"],
-                min_output=self.min_snd
+                min_output=self.min_snd,
+                max_output=self.max_snd
             )
             
             # Set initial desired SND (with initial perturbation)

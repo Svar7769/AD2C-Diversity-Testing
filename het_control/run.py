@@ -28,6 +28,7 @@ from het_control.callbacks.callback import (
     TagCurriculum
 )
 from het_control.callbacks.esc_callback import ESCCallback  # Changed from AdaptiveESCCallback
+from het_control.callbacks.smartEscCallback import SmartESCCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
@@ -114,6 +115,24 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
                 min_snd=esc_config.get("min_snd", 0.0),
                 max_snd=esc_config.get("max_snd", 3.0),
             )
+            # SmartESCCallback(
+            #     control_group=control_group,
+            #     initial_snd=esc_config.get("initial_snd", 0.0),
+            #     dither_magnitude=esc_config.get("dither_magnitude", 0.1),
+            #     dither_frequency_rad_s=esc_config.get("dither_frequency", 0.5),
+            #     integrator_gain=esc_config.get("integrator_gain", -0.01),
+            #     high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.1),
+            #     low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.05),      
+            #     # use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
+            #     sampling_period=esc_config.get("sampling_period", 1.0),
+            #     min_snd=esc_config.get("min_snd", 0.0),
+            #     max_snd=esc_config.get("max_snd", 3.0),
+            #     enable_adaptive_dither=True,
+            #     enable_adaptive_gain=True,
+            #     enable_state_machine=True,
+            #     convergence_patience=5,
+            #     exploration_steps=6,
+            # )
         )
         
         # Add action space loss

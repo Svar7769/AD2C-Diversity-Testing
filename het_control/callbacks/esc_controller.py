@@ -92,7 +92,8 @@ class ExtremumSeekingController:
         high_pass_cutoff: float,
         low_pass_cutoff: float,
         use_adaptive_gain: bool = True,
-        min_output: float = 0.0
+        min_output: float = 0.0,
+        max_output: float = float('inf')
     ):
         """
         Args:
@@ -113,6 +114,7 @@ class ExtremumSeekingController:
         self.theta_0 = initial_value  # Initial setpoint
         self.use_adaptive = use_adaptive_gain
         self.min_output = min_output
+        self.max_output = max_output
         
         # Initialize filters
         self.hpf = HighPassFilter(sampling_period, high_pass_cutoff)
@@ -175,11 +177,14 @@ class ExtremumSeekingController:
         
         # 8. Apply output constraints (clamping with anti-windup)
         setpoint = max(setpoint_raw, self.min_output)
+        setpoint = min(setpoint, self.max_output)
         
         # 9. Anti-windup: correct integrator if output is saturated
         if setpoint_raw < self.min_output:
             self.integral = self.min_output - self.theta_0
-        
+        elif setpoint_raw > self.max_output:
+            self.integral = self.max_output - self.theta_0
+
         # 10. Add perturbation to get final output
         perturbation = self.a * np.sin(self.phase)
         output = setpoint + perturbation

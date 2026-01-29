@@ -16,7 +16,7 @@ BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
 
 # Paths
 ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
-CONFIG_NAME = "dispersion_ippo_config"
+CONFIG_NAME = "dispersion_maddpg_config"
 SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/dispersion_ippo/"
 
 # Default training parameters (can be overridden)
