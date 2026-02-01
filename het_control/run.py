@@ -107,7 +107,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
                 integrator_gain=esc_config.get("integrator_gain", -10.0),
                 high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.5),
                 low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
-                use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
+                # use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
                 sampling_period=esc_config.get("sampling_period", 1.0),
                 min_snd=esc_config.get("min_snd", 0.0),
                 max_snd=esc_config.get("max_snd", 3.0)
@@ -115,21 +115,24 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
 
             # SmartESCCallback(
             #     control_group=control_group,
-            #     initial_snd= 1.0,
-            #     dither_magnitude=0.2,
-            #     dither_frequency_rad_s= 1.0,
-            #     integrator_gain= -1.0,
-            #     high_pass_cutoff_rad_s= 0.5,
-            #     low_pass_cutoff_rad_s= 0.1,
-            #     sampling_period= 1.0,
-            #     min_snd= 0.0,
-            #     max_snd= 3.0,
-            #     # Smart adaptive features
-            #     enable_adaptive_dither= True,
-            #     enable_adaptive_gain= True,
-            #     enable_state_machine= True,
-            #     convergence_patience= 5,
-            #     exploration_steps= 10,
+            #     initial_snd=0.0,
+            #     min_snd=0.0,
+            #     max_snd=3.0,
+            #     # ESC parameters
+            #     sampling_period=1.0,
+            #     dither_frequency=1.0,          # was: dither_frequency_rad_s
+            #     dither_amplitude=0.07,          # was: dither_magnitude
+            #     learning_rate=2,            # was: integrator_gain (now positive for ascent!)
+            #     high_pass_cutoff=0.8,          # was: high_pass_cutoff_rad_s
+            #     low_pass_cutoff=0.5,           # was: low_pass_cutoff_rad_s
+            #     # RMSprop parameters
+            #     use_rmsprop=False,
+            #     beta=0.8,
+            #     epsilon=1e-8,
+            #     max_lr_multiplier=5.0,
+            #     # Vanishing perturbation
+            #     use_vanishing_perturbation=False,
+            #     min_perturbation_ratio=0.15,
             # )
         )
         

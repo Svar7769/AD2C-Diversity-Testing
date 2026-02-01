@@ -1,5 +1,7 @@
 from typing import List
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend to avoid tkinter errors
 import matplotlib.pyplot as plt
 import wandb
 import torch

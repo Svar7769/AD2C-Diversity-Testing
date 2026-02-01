@@ -23,7 +23,7 @@ MAX_FRAMES = 6_000_000
 CHECKPOINT_INTERVAL = 6_000_000
 
 # Initial SND
-DESIRED_SND = 0.5
+DESIRED_SND = 0.0
 
 # Task-specific overrides
 TASK_OVERRIDES = {
