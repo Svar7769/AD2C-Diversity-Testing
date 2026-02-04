@@ -121,7 +121,7 @@ class ExtremumSeekingController:
         self.lpf = LowPassFilter(sampling_period, low_pass_cutoff)
         
         # State variables
-        self.phase = 0.0  # Current phase of perturbation (wt)
+        self.wt = 0.0  # Current phase of perturbation (wt)
         self.integral = 0.0  # Integrator state
         
         # Adaptive gain parameters
@@ -131,7 +131,7 @@ class ExtremumSeekingController:
         
         # Adaptive gain thresholds
         self.gradient_threshold = 0.2
-        self.high_gain = -0.025  # Used when gradient magnitude is high
+        self.high_gain = -0.05  # Used when gradient magnitude is high
     
     def update(self, cost: float) -> Tuple[float, float, float, float, float, float]:
         """
@@ -152,14 +152,15 @@ class ExtremumSeekingController:
         # 1. High-pass filter to remove DC component from cost signal
         hpf_output = self.hpf.apply(cost)
         
-        # 2. Demodulate by multiplying with sin(wt)
-        demodulated = hpf_output * np.sin(self.phase)
+        # 2. Demodulate by multiplying with sin(wt) normalized by (2.0 / self.a)
+        # demodulated = hpf_output * np.sin(self.wt)
+        demodulated = (2.0 / self.a) * hpf_output * np.sin(self.wt)
         
         # 3. Low-pass filter to extract gradient estimate
         lpf_output = self.lpf.apply(demodulated)
         
         # 4. Compute gradient magnitude using exponential moving average of squared gradient
-        self.m2 = self.beta * self.m2 + (1.0 - self.beta) * (lpf_output ** 2)
+        self.m2 = self.beta * self.m2 + (1.0 - self.beta) * np.power(lpf_output, 2)
         gradient_magnitude = np.sqrt(self.m2)
         
         # 5. Determine integrator gain (adaptive or fixed)
@@ -176,30 +177,29 @@ class ExtremumSeekingController:
         setpoint_raw = self.theta_0 + self.integral
         
         # 8. Apply output constraints (clamping with anti-windup)
-        setpoint = max(setpoint_raw, self.min_output)
-        setpoint = min(setpoint, self.max_output)
+        setpoint = np.clip(setpoint_raw, self.min_output, self.max_output)
         
         # 9. Anti-windup: correct integrator if output is saturated
         if setpoint_raw < self.min_output:
             self.integral = self.min_output - self.theta_0
         elif setpoint_raw > self.max_output:
             self.integral = self.max_output - self.theta_0
-
+        
         # 10. Add perturbation to get final output
-        perturbation = self.a * np.sin(self.phase)
+        perturbation = self.a * np.sin(self.wt)
         output = setpoint + perturbation
         
         # 11. Update phase for next iteration
-        self.phase += self.omega * self.dt
-        if self.phase > 2 * np.pi:
-            self.phase -= 2 * np.pi
+        self.wt += self.omega * self.dt
+        if self.wt > 2 * np.pi:
+            self.wt -= 2 * np.pi
         
         return (
             output,           # Total output (setpoint + perturbation)
             hpf_output,       # High-pass filtered cost
             lpf_output,       # Gradient estimate
             gradient_magnitude,  # RMS of gradient
-            lpf_output,       # Raw gradient (same as lpf_output)
+            demodulated,       # demodulated gradient
             setpoint          # Base setpoint (no perturbation)
         )
     
@@ -207,14 +207,14 @@ class ExtremumSeekingController:
         """Reset controller state to initial conditions."""
         self.hpf.reset()
         self.lpf.reset()
-        self.phase = 0.0
+        self.wt = 0.0
         self.integral = 0.0
         self.m2 = 0.0
     
     def get_state(self) -> dict:
         """Get current controller state."""
         return {
-            "phase": self.phase,
+            "phase": self.wt,
             "integral": self.integral,
             "m2": self.m2,
             "gradient_magnitude": np.sqrt(self.m2)

@@ -62,7 +62,7 @@ def render_callback(experiment, env: EnvBase, data: TensorDictBase):
             plot_position_function_range=1.5,
             plot_position_function_cmap_alpha=0.5,
             env_index=env_index,
-            plot_position_function_precision=0.1, # Increased precision to 0.1 for speed
+            plot_position_function_precision=0.05, # Increased precision to 0.1 for speed
             plot_position_function_cmap_range=[0.0, 1.0],
         )
     except Exception as e:

@@ -26,10 +26,10 @@ class ESCCallback(Callback):
         control_group: str,
         initial_snd: float,
         dither_magnitude: float = 0.1,
-        dither_frequency_rad_s: float = 0.5,
+        dither_frequency: float = 0.5,
         integrator_gain: float = -0.01,
-        high_pass_cutoff_rad_s: float = 0.1,
-        low_pass_cutoff_rad_s: float = 0.05,
+        high_pass_cutoff: float = 0.1,
+        low_pass_cutoff: float = 0.05,
         use_adaptive_gain: bool = True,
         sampling_period: float = 1.0,
         min_snd: float = 0.0,
@@ -58,12 +58,12 @@ class ESCCallback(Callback):
         # Store parameters for logging
         self.esc_params = {
             "sampling_period": sampling_period,
-            "dither_frequency": dither_frequency_rad_s,
+            "dither_frequency": dither_frequency,
             "dither_magnitude": dither_magnitude,
             "integrator_gain": integrator_gain,
             "initial_snd": initial_snd,
-            "high_pass_cutoff": high_pass_cutoff_rad_s,
-            "low_pass_cutoff": low_pass_cutoff_rad_s,
+            "high_pass_cutoff": high_pass_cutoff,
+            "low_pass_cutoff": low_pass_cutoff,
             "use_adaptive_gain": use_adaptive_gain,
             "min_snd": min_snd,
             "max_snd": max_snd
@@ -101,12 +101,11 @@ class ESCCallback(Callback):
                 high_pass_cutoff=self.esc_params["high_pass_cutoff"],
                 low_pass_cutoff=self.esc_params["low_pass_cutoff"],
                 use_adaptive_gain=self.esc_params["use_adaptive_gain"],
-                min_output=self.min_snd,
-                max_output=self.max_snd
+                min_output=self.min_snd
             )
             
             # Set initial desired SND (with initial perturbation)
-            initial_perturbation = self.controller.a * np.sin(self.controller.phase)
+            initial_perturbation = self.controller.a * np.sin(self.controller.wt)
             initial_output = np.clip(
                 self.initial_snd + initial_perturbation,
                 self.min_snd,
@@ -168,14 +167,13 @@ class ESCCallback(Callback):
             hpf_output,          # High-pass filtered cost
             gradient_estimate,   # Gradient estimate (LPF output)
             gradient_magnitude,  # RMS of gradient
-            _,                   # Duplicate gradient (not needed)
+            demodulated,         # Demodulated signal (not needed in logs)
             setpoint             # SND setpoint (without perturbation)
         ) = self.controller.update(cost)
         
         # Clamp perturbed output to bounds
         perturbed_output_clamped = np.clip(perturbed_output, self.min_snd, self.max_snd)
         
-        # ⭐ KEY FIX: Update model immediately with perturbed output
         # This ensures training uses the new ESC-controlled SND value
         self.model.desired_snd[:] = float(perturbed_output_clamped)
         
@@ -205,6 +203,7 @@ class ESCCallback(Callback):
             "esc/reward_mean": mean_reward,
             "esc/reward_std": reward_std,
             "esc/cost": cost,
+            "esc/lpf_input": demodulated,
             
             # SND tracking (actual applied values)
             "esc/snd_actual": self.model.desired_snd.item(),
@@ -225,7 +224,7 @@ class ESCCallback(Callback):
             "esc/gradient_magnitude": gradient_magnitude,
             "esc/hpf_output": hpf_output,
             "esc/integrator_state": self.controller.integral,
-            "esc/phase": self.controller.phase,
+            "esc/phase": self.controller.wt,
             "esc/m2": self.controller.m2,
             
             # Adaptive gain info
