@@ -47,21 +47,23 @@ DEFAULT_ESC_OVERRIDES = {
 def parse_all_overrides():
     """
     Parse all command line arguments dynamically.
-    Supports any Hydra-style override: category.parameter=value
+    Supports any Hydra-style override: category.parameter=value or seed=value
     
     Categories:
     - model.*: Model parameters
     - task.*: Task parameters
     - experiment.*: Experiment parameters
     - esc.*: ESC controller parameters
+    - seed: Random seed
     
     Returns:
-        tuple: (model_overrides, task_overrides, experiment_overrides, esc_overrides)
+        tuple: (model_overrides, task_overrides, experiment_overrides, esc_overrides, seed)
     """
     model_overrides = {}
     task_overrides = {}
     experiment_overrides = {}
     esc_overrides = DEFAULT_ESC_OVERRIDES.copy()
+    seed = None
     
     for arg in sys.argv[1:]:
         if '=' not in arg:
@@ -95,10 +97,12 @@ def parse_all_overrides():
         elif key.startswith('esc.'):
             param = key.replace('esc.', '')
             esc_overrides[param] = value
+        elif key == 'seed':
+            seed = value
         else:
             print(f"⚠️  Warning: Unknown override category: {key}")
     
-    return model_overrides, task_overrides, experiment_overrides, esc_overrides
+    return model_overrides, task_overrides, experiment_overrides, esc_overrides, seed
 
 
 def run_navigation_experiment(
@@ -106,6 +110,7 @@ def run_navigation_experiment(
     task_overrides: dict = None,
     experiment_overrides: dict = None,
     esc_overrides: dict = None,
+    seed: int = None,
     use_esc: bool = USE_ESC
 ):
     """
@@ -116,6 +121,7 @@ def run_navigation_experiment(
         task_overrides: Dictionary of task parameter overrides
         experiment_overrides: Dictionary of experiment parameter overrides
         esc_overrides: Dictionary of ESC controller parameter overrides
+        seed: Random seed value
         use_esc: Whether to use ESC controller
     """
     # Set defaults if None
@@ -123,6 +129,10 @@ def run_navigation_experiment(
     task_overrides = task_overrides or {}
     experiment_overrides = experiment_overrides or {}
     esc_overrides = esc_overrides or DEFAULT_ESC_OVERRIDES.copy()
+    
+    # Add seed to experiment overrides if provided
+    if seed is not None:
+        experiment_overrides['seed'] = seed
     
     # Extract key parameters
     desired_snd = model_overrides.get('desired_snd', 0.0)
@@ -210,7 +220,7 @@ def run_navigation_experiment(
 
 if __name__ == "__main__":
     # Parse all command-line arguments
-    model_overrides, task_overrides, experiment_overrides, esc_overrides = parse_all_overrides()
+    model_overrides, task_overrides, experiment_overrides, esc_overrides, seed = parse_all_overrides()
     
     # Print what was parsed
     print(f"\n{'='*50}")
@@ -221,6 +231,8 @@ if __name__ == "__main__":
         print(f"  Task: {task_overrides}")
     if experiment_overrides:
         print(f"  Experiment: {experiment_overrides}")
+    if seed is not None:
+        print(f"  Seed: {seed}")
     if esc_overrides != DEFAULT_ESC_OVERRIDES:
         print(f"  ESC: {esc_overrides}")
     print(f"{'='*50}\n")
@@ -231,5 +243,6 @@ if __name__ == "__main__":
         task_overrides=task_overrides,
         experiment_overrides=experiment_overrides,
         esc_overrides=esc_overrides,
+        seed=seed,
         use_esc=USE_ESC
     )

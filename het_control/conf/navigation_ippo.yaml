@@ -7,7 +7,7 @@ defaults:
   - model@critic_model: layers/mlp
   - _self_
 
-seed: 0
+seed: 2
 
 # Whether to use the additional action loss to disincentive action outside the space
 use_action_loss: True

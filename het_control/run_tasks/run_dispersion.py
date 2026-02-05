@@ -12,19 +12,19 @@ import os
 # CONFIGURATION - Updated Paths for New System
 # =============================================================================
 # Base directory for the project
-BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
+BASE_DIR = "/home/grad/doc/2027/spatel2/ad2c/AD2C-Diversity-Testing"
 
 # Paths
 ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "dispersion_maddpg_config"
-SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/dispersion_ippo/"
+SAVE_PATH = "/home/grad/doc/2027/spatel2/ad2c/model_checkpoint/dispersion_ippo/"
 
 # Default training parameters (can be overridden)
 DEFAULT_MAX_FRAMES = 12_000_000
 DEFAULT_CHECKPOINT_INTERVAL = 12_000_000
 
 # ESC Controller Configuration
-USE_ESC = True  # Set to False to disable ESC
+USE_ESC = False  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Default ESC overrides (can be overridden from command line)
@@ -37,7 +37,7 @@ DEFAULT_ESC_OVERRIDES = {
     "integrator_gain": -10.0,
     "sampling_period": 1.0,       
     "min_snd": 0.0,
-    "max_snd": 3.0,
+    "max_snd": 20.0,
     "use_adaptive_gain": True,
     "use_action_loss": False,
     "action_loss_lr": 0.001,
