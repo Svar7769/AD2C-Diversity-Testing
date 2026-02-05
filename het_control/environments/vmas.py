@@ -86,7 +86,12 @@ def render_callback(experiment, env: EnvBase, data: TensorDictBase):
             plot_position_function=snd,
             plot_position_function_range=1.5,
             plot_position_function_cmap_alpha=0.5,
+<<<<<<< HEAD
             plot_position_function_precision=0.05,  # 0.05 for quality, 0.1 for speed
+=======
+            env_index=env_index,
+            plot_position_function_precision=0.05, # Increased precision to 0.1 for speed
+>>>>>>> origin/device/lab
             plot_position_function_cmap_range=[0.0, 1.0],
             env_index=env_index
         )
