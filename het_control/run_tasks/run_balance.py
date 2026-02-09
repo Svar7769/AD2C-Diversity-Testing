@@ -12,12 +12,12 @@ import os
 # CONFIGURATION - Updated Paths for New System
 # =============================================================================
 # Base directory for the project
-BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
+BASE_DIR = "/home/grad/doc/2027/spatel2/ad2c/AD2C-Diversity-Testing"
 
 # Paths
 ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "balance_ippo_config"
-SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/balance_ippo/"
+SAVE_PATH = "/home/grad/doc/2027/spatel2/ad2c/model_checkpoint/balance_ippo/"
 
 # Default training parameters (can be overridden)
 DEFAULT_MAX_FRAMES = 12_000_000

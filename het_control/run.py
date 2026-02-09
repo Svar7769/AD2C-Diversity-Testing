@@ -27,8 +27,10 @@ from het_control.callbacks.callback import (
     ActionSpaceLoss,
     TagCurriculum
 )
-from het_control.callbacks.esc_callback import ESCCallback  # Changed from AdaptiveESCCallback
-from het_control.callbacks.smartEscCallback import SmartESCCallback
+from het_control.callbacks.esc_callback import ESCCallback 
+from het_control.callbacks.pidCallback import PIDCallback
+# from het_control.callbacks.smartEscCallback import SmartESCCallback
+from het_control.callbacks.adaptiveEsc_callback import AdaptiveESCCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
@@ -88,6 +90,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
     
     # Initialize base callbacks (always included)
     callbacks = [
+        # PIDCallback(control_group="agents"),
         SndCallback(),
         NormLoggerCallback(),
     ]
@@ -102,20 +105,24 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
         
         # Add ESC controller
         callbacks.append(
-            ESCCallback(
+            # ESCCallback(
+            #     control_group=control_group,
+            #     initial_snd=esc_config.get("initial_snd", 0.0),
+            #     dither_magnitude=esc_config.get("dither_magnitude", 0.1),
+            #     dither_frequency=esc_config.get("dither_frequency", 0.5),
+            #     integrator_gain=esc_config.get("integrator_gain", -0.01),
+            #     high_pass_cutoff=esc_config.get("high_pass_cutoff", 0.1),
+            #     low_pass_cutoff=esc_config.get("low_pass_cutoff", 0.05),
+            #     use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
+            #     # sampling_period=esc_config.get("sampling_period", 1.0),
+            #     # adaptive_threshold=esc_config.get("adaptive_threshold", 0.2),
+            #     # high_gain_multiplier=esc_config.get("high_gain_multiplier", 1.5),
+            #     min_snd=esc_config.get("min_snd", 0.0),
+            #     max_snd=esc_config.get("max_snd", 3.0),
+            # ),
+            AdaptiveESCCallback(
                 control_group=control_group,
                 initial_snd=esc_config.get("initial_snd", 0.0),
-                dither_magnitude=esc_config.get("dither_magnitude", 0.1),
-                dither_frequency=esc_config.get("dither_frequency", 0.5),
-                integrator_gain=esc_config.get("integrator_gain", -0.01),
-                high_pass_cutoff=esc_config.get("high_pass_cutoff", 0.1),
-                low_pass_cutoff=esc_config.get("low_pass_cutoff", 0.05),
-                use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
-                # sampling_period=esc_config.get("sampling_period", 1.0),
-                # adaptive_threshold=esc_config.get("adaptive_threshold", 0.2),
-                # high_gain_multiplier=esc_config.get("high_gain_multiplier", 1.5),
-                min_snd=esc_config.get("min_snd", 0.0),
-                max_snd=esc_config.get("max_snd", 3.0),
             )
             # SmartESCCallback(
             #     control_group=control_group,
