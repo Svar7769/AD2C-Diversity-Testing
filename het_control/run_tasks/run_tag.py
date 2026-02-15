@@ -13,12 +13,12 @@ import os
 # CONFIGURATION - Updated Paths for New System
 # =============================================================================
 # Base directory for the project
-BASE_DIR = "/home/spatel/Desktop/ad2c/AD2C-Diversity-Testing"
+BASE_DIR = "/home/grad/doc/2027/spatel2/ad2c/AD2C-Diversity-Testing"
 
 # Paths
 ABS_CONFIG_PATH = f"{BASE_DIR}/het_control/conf"
 CONFIG_NAME = "tag_ippo_config"
-SAVE_PATH = "/home/spatel/Desktop/ad2c/model_checkpoint/tag_ippo/"
+SAVE_PATH = "/home/grad/doc/2027/spatel2/ad2c/model_checkpoint/tag_ippo/"
 
 # Default training parameters (can be overridden)
 DEFAULT_MAX_FRAMES = 12_000_000
@@ -31,11 +31,11 @@ ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 # Default ESC overrides (can be overridden from command line)
 DEFAULT_ESC_OVERRIDES = {
     "control_group": "adversary",  # Controls the predators (adversaries)
-    "dither_magnitude": 0.2,      
+    "dither_magnitude": 0.1,      
     "dither_frequency": 1.0,    
     "high_pass_cutoff": 0.05,
     "low_pass_cutoff": 0.5,
-    "integrator_gain": -1.0,
+    "integrator_gain": -0.01,
     "sampling_period": 1.0,       
     "min_snd": 0.0,
     "max_snd": 3.0,

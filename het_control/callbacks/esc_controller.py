@@ -7,6 +7,8 @@ import numpy as np
 from typing import Tuple
 
 
+# Old filteres
+
 class HighPassFilter:
     """First-order high-pass filter to remove DC offset from signals."""
     
@@ -74,6 +76,79 @@ class LowPassFilter:
         self.prev_output = 0.0
 
 
+
+class LowPassFilter:
+    """First-order low-pass filter for smoothing signals.
+    
+    Uses Euler discretization of a continuous-time RC low-pass filter.
+    Designed for discrete-time MARL environments where signals may
+    start at non-zero values.
+    """
+    
+    def __init__(self, dt: float, cutoff_frequency: float):
+        """
+        Args:
+            dt: Sampling period / time step (seconds)
+            cutoff_frequency: Cutoff frequency in Hz
+        """
+        self.dt = dt
+        tau = 1.0 / (2.0 * np.pi * cutoff_frequency)
+        self.alpha = dt / (tau + dt)
+        self.prev_output: float | None = None
+    
+    def apply(self, value: float) -> float:
+        """Apply low-pass filter to input value.
+        
+        y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
+        """
+        if self.prev_output is None:
+            self.prev_output = value
+            return value
+        self.prev_output = self.alpha * value + (1.0 - self.alpha) * self.prev_output
+        return self.prev_output
+    
+    def reset(self):
+        """Reset filter state. Next call will re-initialize from input."""
+        self.prev_output = None
+
+
+# class HighPassFilter:
+#     """First-order high-pass filter for removing DC offset / slow drift.
+    
+#     Uses Euler discretization of a continuous-time RC high-pass filter.
+#     Designed for ESC demodulation where extracting the AC component
+#     around a perturbation frequency is critical.
+#     """
+    
+#     def __init__(self, dt: float, cutoff_frequency: float):
+#         """
+#         Args:
+#             dt: Sampling period / time step (seconds)
+#             cutoff_frequency: Cutoff frequency in Hz
+#         """
+#         self.dt = dt
+#         tau = 1.0 / (2.0 * np.pi * cutoff_frequency)
+#         self.alpha = tau / (tau + dt)
+#         self.prev_output: float = 0.0
+#         self.prev_input: float | None = None
+    
+#     def apply(self, value: float) -> float:
+#         """Apply high-pass filter to input value.
+        
+#         y[k] = alpha * (y[k-1] + x[k] - x[k-1])
+#         """
+#         if self.prev_input is None:
+#             self.prev_input = value
+#             return 0.0
+#         self.prev_output = self.alpha * (self.prev_output + value - self.prev_input)
+#         self.prev_input = value
+#         return self.prev_output
+    
+#     def reset(self):
+#         """Reset filter state. Next call will re-initialize from input."""
+#         self.prev_output = 0.0
+#         self.prev_input = None
+
 class ExtremumSeekingController:
     """
     Extremum Seeking Controller for real-time optimization.
@@ -130,8 +205,8 @@ class ExtremumSeekingController:
         self.epsilon = 1e-8  # Small constant to prevent division by zero
         
         # Adaptive gain thresholds
-        self.gradient_threshold = 0.2
-        self.high_gain = -0.05  # Used when gradient magnitude is high
+        self.gradient_threshold = 5.0
+        self.high_gain = -0.015  # Used when gradient magnitude is high
     
     def update(self, cost: float) -> Tuple[float, float, float, float, float, float]:
         """
