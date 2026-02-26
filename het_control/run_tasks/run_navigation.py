@@ -38,7 +38,9 @@ DEFAULT_ESC_OVERRIDES = {
     "sampling_period": 1.0,       
     "min_snd": 0.0,
     "max_snd": 3.0,
-    "use_adaptive_gain": True,    
+    "use_adaptive_gain": True,  
+    "gradient_threshold": 5.0,
+    "high_gain": -0.1,
     "use_action_loss": False,
     "action_loss_lr": 0.001,
 }

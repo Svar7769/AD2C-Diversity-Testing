@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Run with different SND values and agents_with_same_goal configurations
-snd_values=(1.3 1.5)
-goal_values=(1 2 3)
+snd_values=(0)
+goal_values=(3 2 1) 
 
 for snd in "${snd_values[@]}"; do
     for goals in "${goal_values[@]}"; do

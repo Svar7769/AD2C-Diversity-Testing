@@ -31,15 +31,17 @@ ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 # Default ESC overrides (can be overridden from command line)
 DEFAULT_ESC_OVERRIDES = {
     "control_group": "adversary",  # Controls the predators (adversaries)
-    "dither_magnitude": 0.1,      
+    "dither_magnitude": 0.2,      
     "dither_frequency": 1.0,    
-    "high_pass_cutoff": 0.05,
-    "low_pass_cutoff": 0.5,
-    "integrator_gain": -0.01,
+    "high_pass_cutoff": 0.8,
+    "low_pass_cutoff": 0.1,
+    "integrator_gain": -0.001,
     "sampling_period": 1.0,       
     "min_snd": 0.0,
-    "max_snd": 3.0,
+    "max_snd": 10.0,
     "use_adaptive_gain": True,
+    "gradient_threshold": 15.0,
+    "high_gain": -0.002,
     "simple_tag_freeze_policy": False,
     "simple_tag_freeze_policy_after_frames": 1_000_000,
     "use_action_loss": False,

@@ -167,6 +167,8 @@ class ExtremumSeekingController:
         high_pass_cutoff: float,
         low_pass_cutoff: float,
         use_adaptive_gain: bool = True,
+        grad_threshold: float = 5.0,
+        high_gain: float = -0.015,
         min_output: float = 0.0,
         max_output: float = float('inf')
     ):
@@ -190,6 +192,9 @@ class ExtremumSeekingController:
         self.use_adaptive = use_adaptive_gain
         self.min_output = min_output
         self.max_output = max_output
+        # Adaptive gain thresholds
+        self.gradient_threshold = grad_threshold
+        self.high_gain = high_gain  # Used when gradient magnitude is high
         
         # Initialize filters
         self.hpf = HighPassFilter(sampling_period, high_pass_cutoff)
@@ -203,11 +208,7 @@ class ExtremumSeekingController:
         self.m2 = 0.0  # Second moment estimate (for RMS)
         self.beta = 0.8  # Exponential moving average coefficient
         self.epsilon = 1e-8  # Small constant to prevent division by zero
-        
-        # Adaptive gain thresholds
-        self.gradient_threshold = 5.0
-        self.high_gain = -0.015  # Used when gradient magnitude is high
-    
+            
     def update(self, cost: float) -> Tuple[float, float, float, float, float, float]:
         """
         Update the controller with a new cost measurement.

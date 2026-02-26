@@ -24,21 +24,23 @@ DEFAULT_MAX_FRAMES = 12_000_000
 DEFAULT_CHECKPOINT_INTERVAL = 12_000_000
 
 # ESC Controller Configuration
-USE_ESC = True  # Set to False to disable ESC
+USE_ESC = False  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Default ESC overrides (can be overridden from command line)
 DEFAULT_ESC_OVERRIDES = {
     "control_group": "agents",
-    "dither_magnitude": 0.2,      
+    "dither_magnitude": 0.1,      
     "dither_frequency": 1.0,    
-    "high_pass_cutoff": 0.05,
-    "low_pass_cutoff": 0.5,
-    "integrator_gain": -0.1,
+    "high_pass_cutoff": 0.10,
+    "low_pass_cutoff": 0.10,
+    "integrator_gain": -0.005,
     "sampling_period": 1.0,       
     "min_snd": 0.0,
     "max_snd": 3.0,
     "use_adaptive_gain": True,
+    "gradient_threshold": 5.0,
+    "high_gain": -0.01,
     "use_action_loss": False,
     "action_loss_lr": 0.001,
 }

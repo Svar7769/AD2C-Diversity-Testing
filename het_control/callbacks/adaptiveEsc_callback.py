@@ -44,9 +44,9 @@ class AdaptiveESCCallback(Callback):
         initial_snd: float,
         dither_magnitude: float = 0.2,
         dither_frequency: float = 1.0,
-        integrator_gain: float = -0.01,
-        high_pass_cutoff: float = 0.05,
-        low_pass_cutoff: float = 0.5,
+        integrator_gain: float = -0.05,
+        high_pass_cutoff: float = 1.0,
+        low_pass_cutoff: float = 1.0,
         use_adaptive_gain: bool = True,
         sampling_period: float = 1.0,
         min_snd: float = 0.0,
@@ -57,7 +57,7 @@ class AdaptiveESCCallback(Callback):
         reward_stability_threshold: float = 0.05,
         reward_change_threshold: float = 0.10,
         min_episodes_before_stable: int = 15,
-        gradient_stability_threshold: float = 0.4
+        gradient_stability_threshold: float = 0.5
     ):
         """
         Args:

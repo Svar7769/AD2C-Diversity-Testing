@@ -31,6 +31,8 @@ class ESCCallback(Callback):
         high_pass_cutoff: float = 0.1,
         low_pass_cutoff: float = 0.05,
         use_adaptive_gain: bool = True,
+        grad_threshold: float = 5.0,
+        high_gain: float = -0.015,
         sampling_period: float = 1.0,
         min_snd: float = 0.0,
         max_snd: float = 3.0
@@ -65,6 +67,8 @@ class ESCCallback(Callback):
             "high_pass_cutoff": high_pass_cutoff,
             "low_pass_cutoff": low_pass_cutoff,
             "use_adaptive_gain": use_adaptive_gain,
+            "gradient_threshold": grad_threshold,
+            "high_gain": high_gain,
             "min_snd": min_snd,
             "max_snd": max_snd
         }
@@ -101,6 +105,8 @@ class ESCCallback(Callback):
                 high_pass_cutoff=self.esc_params["high_pass_cutoff"],
                 low_pass_cutoff=self.esc_params["low_pass_cutoff"],
                 use_adaptive_gain=self.esc_params["use_adaptive_gain"],
+                grad_threshold=self.esc_params["gradient_threshold"],
+                high_gain=self.esc_params["high_gain"],
                 min_output=self.min_snd
             )
             
@@ -120,6 +126,8 @@ class ESCCallback(Callback):
             print(f"   High-pass cutoff: {self.esc_params['high_pass_cutoff']:.3f} rad/s")
             print(f"   Low-pass cutoff: {self.esc_params['low_pass_cutoff']:.3f} rad/s")
             print(f"   Adaptive gain: {self.esc_params['use_adaptive_gain']}")
+            print(f"   Gradient threshold: {self.esc_params['gradient_threshold']:.3f}")
+            print(f"   High gain: {self.esc_params['high_gain']:.4f}")
             print(f"   SND bounds: [{self.min_snd:.1f}, {self.max_snd:.1f}]\n")
         else:
             print(f"\nWARNING: Compatible model not found for group '{self.control_group}'. Disabling ESC.\n")
