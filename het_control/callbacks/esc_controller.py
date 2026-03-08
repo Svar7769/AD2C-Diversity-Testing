@@ -10,106 +10,90 @@ from typing import Tuple
 # Old filteres
 
 class HighPassFilter:
-    """First-order high-pass filter to remove DC offset from signals."""
-    
     def __init__(self, sampling_period: float, cutoff_frequency: float):
-        """
-        Args:
-            sampling_period: Time between samples (seconds)
-            cutoff_frequency: Cutoff frequency in rad/s
-        """
         self.dt = sampling_period
         self.wc = cutoff_frequency
-        
-        # Filter coefficient: alpha = wc / (wc + 1/dt)
-        self.alpha = self.wc / (self.wc + 1.0 / self.dt)
-        
-        # Previous values for filtering
-        self.prev_input = 0.0
+        self.alpha = 1.0 / (1.0 + self.wc * self.dt)
+        self.prev_input = None   # ← None triggers warm-start
         self.prev_output = 0.0
-    
+
     def apply(self, input_signal: float) -> float:
-        """Apply high-pass filter to input signal."""
-        # HPF formula: y[k] = alpha * (y[k-1] + x[k] - x[k-1])
+        if self.prev_input is None:
+            self.prev_input = input_signal  # ← no transient on first step
+            return 0.0                      # correct: no change seen yet
+
         output = self.alpha * (self.prev_output + input_signal - self.prev_input)
-        
         self.prev_input = input_signal
         self.prev_output = output
-        
         return output
-    
+
     def reset(self):
-        """Reset filter state."""
-        self.prev_input = 0.0
+        self.prev_input = None   # ← warm-start reinstated after reset
         self.prev_output = 0.0
 
 
 class LowPassFilter:
     """First-order low-pass filter to smooth signals."""
-    
     def __init__(self, sampling_period: float, cutoff_frequency: float):
-        """
-        Args:
-            sampling_period: Time between samples (seconds)
-            cutoff_frequency: Cutoff frequency in rad/s
-        """
         self.dt = sampling_period
         self.wc = cutoff_frequency
         
         # Filter coefficient: alpha = dt * wc / (1 + dt * wc)
         self.alpha = (self.dt * self.wc) / (1.0 + self.dt * self.wc)
         
-        # Previous output for filtering
-        self.prev_output = 0.0
+        # None triggers warm-start on first apply() call
+        self.prev_output = None
     
     def apply(self, input_signal: float) -> float:
         """Apply low-pass filter to input signal."""
+        if self.prev_output is None:
+            self.prev_output = input_signal
+            return input_signal
+        
         # LPF formula: y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
         output = self.alpha * input_signal + (1.0 - self.alpha) * self.prev_output
-        
         self.prev_output = output
         
         return output
     
     def reset(self):
-        """Reset filter state."""
-        self.prev_output = 0.0
-
-
-
-class LowPassFilter:
-    """First-order low-pass filter for smoothing signals.
-    
-    Uses Euler discretization of a continuous-time RC low-pass filter.
-    Designed for discrete-time MARL environments where signals may
-    start at non-zero values.
-    """
-    
-    def __init__(self, dt: float, cutoff_frequency: float):
-        """
-        Args:
-            dt: Sampling period / time step (seconds)
-            cutoff_frequency: Cutoff frequency in Hz
-        """
-        self.dt = dt
-        tau = 1.0 / (2.0 * np.pi * cutoff_frequency)
-        self.alpha = dt / (tau + dt)
-        self.prev_output: float | None = None
-    
-    def apply(self, value: float) -> float:
-        """Apply low-pass filter to input value.
-        
-        y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
-        """
-        if self.prev_output is None:
-            self.prev_output = value
-            return value
-        self.prev_output = self.alpha * value + (1.0 - self.alpha) * self.prev_output
-        return self.prev_output
-    
-    def reset(self):
-        """Reset filter state. Next call will re-initialize from input."""
         self.prev_output = None
+
+
+
+# class LowPassFilter:
+#     """First-order low-pass filter for smoothing signals.
+    
+#     Uses Euler discretization of a continuous-time RC low-pass filter.
+#     Designed for discrete-time MARL environments where signals may
+#     start at non-zero values.
+#     """
+    
+#     def __init__(self, dt: float, cutoff_frequency: float):
+#         """
+#         Args:
+#             dt: Sampling period / time step (seconds)
+#             cutoff_frequency: Cutoff frequency in Hz
+#         """
+#         self.dt = dt
+#         tau = 1.0 / (2.0 * np.pi * cutoff_frequency)
+#         self.alpha = dt / (tau + dt)
+#         self.prev_output: float | None = None
+    
+#     def apply(self, value: float) -> float:
+#         """Apply low-pass filter to input value.
+        
+#         y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
+#         """
+#         if self.prev_output is None:
+#             self.prev_output = value
+#             return value
+#         self.prev_output = self.alpha * value + (1.0 - self.alpha) * self.prev_output
+#         return self.prev_output
+    
+#     def reset(self):
+#         """Reset filter state. Next call will re-initialize from input."""
+#         self.prev_output = None
 
 
 # class HighPassFilter:

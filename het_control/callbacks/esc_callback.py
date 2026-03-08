@@ -35,7 +35,8 @@ class ESCCallback(Callback):
         high_gain: float = -0.015,
         sampling_period: float = 1.0,
         min_snd: float = 0.0,
-        max_snd: float = 3.0
+        max_snd: float = 3.0,
+        reward_scale: float = 1.0 
     ):
         """
         Args:
@@ -56,6 +57,7 @@ class ESCCallback(Callback):
         self.initial_snd = initial_snd
         self.min_snd = min_snd
         self.max_snd = max_snd
+        self.reward_scale = reward_scale
         
         # Store parameters for logging
         self.esc_params = {
@@ -70,7 +72,8 @@ class ESCCallback(Callback):
             "gradient_threshold": grad_threshold,
             "high_gain": high_gain,
             "min_snd": min_snd,
-            "max_snd": max_snd
+            "max_snd": max_snd,
+            "reward_scale": reward_scale
         }
         
         self.model: Optional[HetControlMlpEmpirical] = None
@@ -129,6 +132,7 @@ class ESCCallback(Callback):
             print(f"   Gradient threshold: {self.esc_params['gradient_threshold']:.3f}")
             print(f"   High gain: {self.esc_params['high_gain']:.4f}")
             print(f"   SND bounds: [{self.min_snd:.1f}, {self.max_snd:.1f}]\n")
+            print(f"   Reward scale: {self.reward_scale:.1f}\n")
         else:
             print(f"\nWARNING: Compatible model not found for group '{self.control_group}'. Disabling ESC.\n")
             self.model = None
@@ -163,7 +167,7 @@ class ESCCallback(Callback):
         reward_std = np.std(episode_rewards)
         
         # ESC minimizes cost, so negate reward (maximize reward = minimize negative reward)
-        cost = -mean_reward
+        cost = -mean_reward / self.reward_scale 
         
         # Store previous SND (actual value with perturbation)
         previous_snd = self.model.desired_snd.item()

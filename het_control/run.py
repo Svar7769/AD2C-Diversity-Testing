@@ -118,6 +118,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
                 high_gain=esc_config.get("high_gain", -0.015),
                 min_snd=esc_config.get("min_snd", 0.0),
                 max_snd=esc_config.get("max_snd", 3.0),
+                reward_scale=esc_config.get("reward_scale", 1.0)
             ),
             # AdaptiveESCCallback(
             #     control_group=control_group,
@@ -183,7 +184,8 @@ def run_experiment(
     desired_snd: float = 0.0,
     task_overrides: Optional[Dict[str, Any]] = None,
     esc_config_path: Optional[str] = None,
-    use_esc: bool = True
+    use_esc: bool = True,
+    seed: Optional[int] = None,
 ):
     """
     Run the experiment with specified configuration.
@@ -229,6 +231,9 @@ def run_experiment(
         f"experiment.save_folder={save_path}",
         f"model.desired_snd={desired_snd}",
     ])
+    
+    if seed is not None:
+        sys.argv.append(f"seed={seed}")
     
     # Add ESC parameters if using ESC
     if use_esc and esc_config is not None:

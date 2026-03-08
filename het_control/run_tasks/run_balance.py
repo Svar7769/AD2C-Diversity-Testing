@@ -24,7 +24,7 @@ DEFAULT_MAX_FRAMES = 12_000_000
 DEFAULT_CHECKPOINT_INTERVAL = 12_000_000
 
 # ESC Controller Configuration
-USE_ESC = False  # Set to False to disable ESC
+USE_ESC = True  # Set to False to disable ESC
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Default ESC overrides (can be overridden from command line)
@@ -32,17 +32,19 @@ DEFAULT_ESC_OVERRIDES = {
     "control_group": "agents",
     "dither_magnitude": 0.1,      
     "dither_frequency": 1.0,    
-    "high_pass_cutoff": 0.10,
-    "low_pass_cutoff": 0.10,
-    "integrator_gain": -0.005,
+    "high_pass_cutoff": 1.0,
+    "low_pass_cutoff": 1.0,
+    "integrator_gain": -0.01,
     "sampling_period": 1.0,       
     "min_snd": 0.0,
     "max_snd": 3.0,
     "use_adaptive_gain": True,
     "gradient_threshold": 5.0,
-    "high_gain": -0.01,
+    "high_gain": -0.02,
     "use_action_loss": False,
     "action_loss_lr": 0.001,
+    "reward_scale": 10.0
+
 }
 
 
@@ -64,6 +66,7 @@ def parse_all_overrides():
     task_overrides = {}
     experiment_overrides = {}
     esc_overrides = DEFAULT_ESC_OVERRIDES.copy()
+    seed = None
     
     for arg in sys.argv[1:]:
         if '=' not in arg:
@@ -97,10 +100,12 @@ def parse_all_overrides():
         elif key.startswith('esc.'):
             param = key.replace('esc.', '')
             esc_overrides[param] = value
+        elif key == 'seed':
+            seed = value
         else:
             print(f"⚠️  Warning: Unknown override category: {key}")
     
-    return model_overrides, task_overrides, experiment_overrides, esc_overrides
+    return model_overrides, task_overrides, experiment_overrides, esc_overrides, seed
 
 
 def run_balance_experiment(
@@ -108,6 +113,7 @@ def run_balance_experiment(
     task_overrides: dict = None,
     experiment_overrides: dict = None,
     esc_overrides: dict = None,
+    seed: int = None,
     use_esc: bool = USE_ESC
 ):
     """
@@ -205,6 +211,7 @@ def run_balance_experiment(
         checkpoint_interval=checkpoint_interval,
         desired_snd=desired_snd,
         task_overrides=task_overrides,
+        seed=seed,
         esc_config_path=esc_config_to_use,
         use_esc=use_esc
     )
@@ -212,7 +219,7 @@ def run_balance_experiment(
 
 if __name__ == "__main__":
     # Parse all command-line arguments
-    model_overrides, task_overrides, experiment_overrides, esc_overrides = parse_all_overrides()
+    model_overrides, task_overrides, experiment_overrides, esc_overrides, seed = parse_all_overrides()
     
     # Print what was parsed
     print(f"\n{'='*50}")
@@ -223,6 +230,8 @@ if __name__ == "__main__":
         print(f"  Task: {task_overrides}")
     if experiment_overrides:
         print(f"  Experiment: {experiment_overrides}")
+    if seed is not None:
+        print(f"  Seed: {seed}")
     if esc_overrides != DEFAULT_ESC_OVERRIDES:
         print(f"  ESC: {esc_overrides}")
     print(f"{'='*50}\n")
@@ -233,5 +242,6 @@ if __name__ == "__main__":
         task_overrides=task_overrides,
         experiment_overrides=experiment_overrides,
         esc_overrides=esc_overrides,
+        seed=seed,
         use_esc=USE_ESC
     )
