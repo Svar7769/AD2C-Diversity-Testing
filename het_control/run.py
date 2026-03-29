@@ -11,9 +11,11 @@ from hydra.core.global_hydra import GlobalHydra
 import yaml
 from typing import Optional, Dict, Any
 
+import copy
 import benchmarl.models
 from benchmarl.algorithms import *
-from benchmarl.environments import VmasTask
+from benchmarl.environments import VmasTask, task_config_registry
+from benchmarl.environments.vmas.common import VmasClass
 from benchmarl.experiment import Experiment
 from benchmarl.hydra_config import (
     load_algorithm_config_from_hydra,
@@ -21,6 +23,7 @@ from benchmarl.hydra_config import (
     load_task_config_from_hydra,
     load_model_config_from_hydra,
 )
+from torchrl.envs.libs.vmas import VmasEnv
 
 from het_control.callbacks.callback import (
     SndCallback,
@@ -35,14 +38,43 @@ from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
 
 
+class _NavigationBoundedClass(VmasClass):
+    """TaskClass for navigation_bounded — passes scenario class directly to VmasEnv."""
+
+    def get_env_fun(self, num_envs, continuous_actions, seed, device):
+        from het_control.environments.navigation_bounded import Scenario
+        config = copy.deepcopy(self.config)
+        return lambda: VmasEnv(
+            scenario=Scenario(),
+            num_envs=num_envs,
+            continuous_actions=continuous_actions,
+            seed=seed,
+            device=device,
+            categorical_actions=True,
+            clamp_actions=True,
+            **config,
+        )
+
+
+class _NavigationBoundedTask:
+    """Adapter stored in task_config_registry — mimics Task enum get_task()."""
+
+    def get_task(self, config):
+        return _NavigationBoundedClass(name="navigation_bounded", config=config)
+
+
 def setup(task_name: str) -> None:
     """Register custom models and setup task-specific configurations."""
     benchmarl.models.model_config_registry.update({
         "hetcontrolmlpempirical": HetControlMlpEmpiricalConfig,
     })
-    
+
+    # Register custom navigation_bounded task (walls + agent collisions, no lidar)
+    if "vmas/navigation_bounded" not in task_config_registry:
+        task_config_registry["vmas/navigation_bounded"] = _NavigationBoundedTask()
+
     # Task-specific render callbacks
-    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire","vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", "vmas/reverse_transport","vmas/sampling","vmas/tag"]:
+    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire","vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", "vmas/navigation_bounded", "vmas/reverse_transport","vmas/sampling","vmas/tag"]:
         VmasTask.render_callback = render_callback
 
 

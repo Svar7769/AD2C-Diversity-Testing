@@ -2,6 +2,14 @@
 #  ProrokLab (https://www.proroklab.org/)
 #  All rights reserved.
 
+# Force non-interactive Agg backend before any matplotlib/VMAS render imports.
+# VMAS's plot_position_function uses matplotlib internally; tkinter (the default
+# interactive backend) crashes when called from a non-main thread (e.g. during
+# BenchMARL evaluation).  Agg renders to an in-memory buffer instead.
+import os as _os
+_os.environ.setdefault("MPLBACKEND", "Agg")
+import matplotlib as _matplotlib
+_matplotlib.use("Agg")
 
 import torch
 from tensordict import TensorDictBase, TensorDict

@@ -143,7 +143,8 @@ class HetControlMlpEmpirical(Model):
         else:  # Gather outputs for one agent on the obs
             # tensor of shape [*batch, n_agents, n_actions], where the outputs
             # along the n_agent dimension are taken with the same (agent_index) agent network
-            agent_out = self.agent_mlps.agent_networks[agent_index].forward(input)
+            with self.agent_mlps.params[agent_index].to_module(self.agent_mlps._empty_net):
+                agent_out = self.agent_mlps._empty_net(input)
 
         shared_out = self.process_shared_out(shared_out)
 
@@ -237,8 +238,9 @@ class HetControlMlpEmpirical(Model):
         """
         agent_actions = []
         # Gather what actions each agent would take if given the obs tensor
-        for agent_net in self.agent_mlps.agent_networks:
-            agent_outputs = agent_net(obs)
+        for i in range(self.n_agents):
+            with self.agent_mlps.params[i].to_module(self.agent_mlps._empty_net):
+                agent_outputs = self.agent_mlps._empty_net(obs)
             agent_actions.append(agent_outputs)
 
         distance = (

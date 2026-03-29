@@ -128,7 +128,7 @@ class ExtremumSeekingController:
         self.epsilon = 1e-8  # Small constant to prevent division by zero
         
         # Adaptive gain thresholds
-        self.gradient_threshold = 0.2
+        self.gradient_threshold = 0.5
         self.high_gain = -0.025  # Used when gradient magnitude is high
     
     def update(self, cost: float) -> Tuple[float, float, float, float, float, float]:

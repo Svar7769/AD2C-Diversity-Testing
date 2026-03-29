@@ -1,0 +1,13 @@
+n_agents: 3
+agents_with_same_goal: 1
+max_steps: 100
+collisions: False          # passed to parent: False = no lidar sensor
+enforce_bounds: True       # passed to subclass: enables x_semidim/y_semidim walls
+agent_collision: True      # passed to subclass: re-enables agent.collide=True
+observe_all_goals: False
+shared_rew: False
+agent_radius: 0.1
+world_spawning_x: 1.0      # arena half-width — matches Gazebo ±1 m
+world_spawning_y: 1.0
+wall_collision_penalty: 0.0   # set to e.g. -1.0 to penalise touching walls
+# wall_collision_margin: null   # defaults to agent_radius; override in metres if needed

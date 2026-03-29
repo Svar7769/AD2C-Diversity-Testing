@@ -1,11 +1,38 @@
 defaults:
-  - experiment_config
+  - base_experiment    # benchmarl defaults — fills all MISSING fields
   - _self_
 
 # The device for collection (e.g. cuda)
 sampling_device: "cuda:0"
 # The device for training (e.g. cuda)
 train_device: "cuda:0"
+# The device for the replay buffer
+buffer_device: "cuda:0"
+
+# Collection settings
+collect_with_grad: False
+parallel_collection: False
+
+# Adam extra kwargs
+adam_extra_kwargs: {}
+
+# Off-policy PER (unused for IPPO, but required by ExperimentConfig)
+off_policy_use_prioritized_replay_buffer: False
+off_policy_prb_alpha: 0.6
+off_policy_prb_beta: 0.4
+
+# Evaluation
+evaluation_static: False
+
+# Logging
+project_name: "adico_navigation"
+wandb_extra_kwargs: {}
+
+# Checkpointing
+restore_map_location: null
+checkpoint_at_end: True
+keep_checkpoints_num: 3
+exclude_buffer_from_checkpoint: False
 
 # Whether to share the parameters of the policy within agent groups
 share_policy_params: True # This won't matter as our model ignores it
@@ -86,7 +113,7 @@ render: True
 # Frequency of evaluation in terms of collected frames (this should be a multiple of on/off_policy_collected_frames_per_batch)
 evaluation_interval: 60_000
 # Number of episodes that evaluation is run on
-evaluation_episodes: 200
+evaluation_episodes: 100
 # If True, when stochastic policies are evaluated, their mode is taken, otherwise, if False, they are sampled
 evaluation_deterministic_actions: False
 
