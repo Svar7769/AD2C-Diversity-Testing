@@ -7,72 +7,131 @@ import numpy as np
 from typing import Tuple
 
 
+# Old filteres
+
 class HighPassFilter:
-    """First-order high-pass filter to remove DC offset from signals."""
-    
     def __init__(self, sampling_period: float, cutoff_frequency: float):
-        """
-        Args:
-            sampling_period: Time between samples (seconds)
-            cutoff_frequency: Cutoff frequency in rad/s
-        """
         self.dt = sampling_period
         self.wc = cutoff_frequency
-        
-        # Filter coefficient: alpha = wc / (wc + 1/dt)
-        self.alpha = self.wc / (self.wc + 1.0 / self.dt)
-        
-        # Previous values for filtering
-        self.prev_input = 0.0
+        self.alpha = 1.0 / (1.0 + self.wc * self.dt)
+        self.prev_input = None   # ← None triggers warm-start
         self.prev_output = 0.0
-    
+
     def apply(self, input_signal: float) -> float:
-        """Apply high-pass filter to input signal."""
-        # HPF formula: y[k] = alpha * (y[k-1] + x[k] - x[k-1])
+        if self.prev_input is None:
+            self.prev_input = input_signal  # ← no transient on first step
+            return 0.0                      # correct: no change seen yet
+
         output = self.alpha * (self.prev_output + input_signal - self.prev_input)
-        
         self.prev_input = input_signal
         self.prev_output = output
-        
         return output
-    
+
     def reset(self):
-        """Reset filter state."""
-        self.prev_input = 0.0
+        self.prev_input = None   # ← warm-start reinstated after reset
         self.prev_output = 0.0
 
 
 class LowPassFilter:
     """First-order low-pass filter to smooth signals."""
-    
     def __init__(self, sampling_period: float, cutoff_frequency: float):
-        """
-        Args:
-            sampling_period: Time between samples (seconds)
-            cutoff_frequency: Cutoff frequency in rad/s
-        """
         self.dt = sampling_period
         self.wc = cutoff_frequency
         
         # Filter coefficient: alpha = dt * wc / (1 + dt * wc)
         self.alpha = (self.dt * self.wc) / (1.0 + self.dt * self.wc)
         
-        # Previous output for filtering
-        self.prev_output = 0.0
+        # None triggers warm-start on first apply() call
+        self.prev_output = None
     
     def apply(self, input_signal: float) -> float:
         """Apply low-pass filter to input signal."""
+        if self.prev_output is None:
+            self.prev_output = input_signal
+            return input_signal
+        
         # LPF formula: y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
         output = self.alpha * input_signal + (1.0 - self.alpha) * self.prev_output
-        
         self.prev_output = output
         
         return output
     
     def reset(self):
-        """Reset filter state."""
-        self.prev_output = 0.0
+        self.prev_output = None
 
+
+
+# class LowPassFilter:
+#     """First-order low-pass filter for smoothing signals.
+    
+#     Uses Euler discretization of a continuous-time RC low-pass filter.
+#     Designed for discrete-time MARL environments where signals may
+#     start at non-zero values.
+#     """
+    
+#     def __init__(self, dt: float, cutoff_frequency: float):
+#         """
+#         Args:
+#             dt: Sampling period / time step (seconds)
+#             cutoff_frequency: Cutoff frequency in Hz
+#         """
+#         self.dt = dt
+#         tau = 1.0 / (2.0 * np.pi * cutoff_frequency)
+#         self.alpha = dt / (tau + dt)
+#         self.prev_output: float | None = None
+    
+#     def apply(self, value: float) -> float:
+#         """Apply low-pass filter to input value.
+        
+#         y[k] = alpha * x[k] + (1 - alpha) * y[k-1]
+#         """
+#         if self.prev_output is None:
+#             self.prev_output = value
+#             return value
+#         self.prev_output = self.alpha * value + (1.0 - self.alpha) * self.prev_output
+#         return self.prev_output
+    
+#     def reset(self):
+#         """Reset filter state. Next call will re-initialize from input."""
+#         self.prev_output = None
+
+
+# class HighPassFilter:
+#     """First-order high-pass filter for removing DC offset / slow drift.
+    
+#     Uses Euler discretization of a continuous-time RC high-pass filter.
+#     Designed for ESC demodulation where extracting the AC component
+#     around a perturbation frequency is critical.
+#     """
+    
+#     def __init__(self, dt: float, cutoff_frequency: float):
+#         """
+#         Args:
+#             dt: Sampling period / time step (seconds)
+#             cutoff_frequency: Cutoff frequency in Hz
+#         """
+#         self.dt = dt
+#         tau = 1.0 / (2.0 * np.pi * cutoff_frequency)
+#         self.alpha = tau / (tau + dt)
+#         self.prev_output: float = 0.0
+#         self.prev_input: float | None = None
+    
+#     def apply(self, value: float) -> float:
+#         """Apply high-pass filter to input value.
+        
+#         y[k] = alpha * (y[k-1] + x[k] - x[k-1])
+#         """
+#         if self.prev_input is None:
+#             self.prev_input = value
+#             return 0.0
+#         self.prev_output = self.alpha * (self.prev_output + value - self.prev_input)
+#         self.prev_input = value
+#         return self.prev_output
+    
+#     def reset(self):
+#         """Reset filter state. Next call will re-initialize from input."""
+#         self.prev_output = 0.0
+#         self.prev_input = None
 
 class ExtremumSeekingController:
     """
@@ -92,7 +151,10 @@ class ExtremumSeekingController:
         high_pass_cutoff: float,
         low_pass_cutoff: float,
         use_adaptive_gain: bool = True,
-        min_output: float = 0.0
+        grad_threshold: float = 5.0,
+        high_gain: float = -0.015,
+        min_output: float = 0.0,
+        max_output: float = float('inf')
     ):
         """
         Args:
@@ -113,24 +175,24 @@ class ExtremumSeekingController:
         self.theta_0 = initial_value  # Initial setpoint
         self.use_adaptive = use_adaptive_gain
         self.min_output = min_output
+        self.max_output = max_output
+        # Adaptive gain thresholds
+        self.gradient_threshold = grad_threshold
+        self.high_gain = high_gain  # Used when gradient magnitude is high
         
         # Initialize filters
         self.hpf = HighPassFilter(sampling_period, high_pass_cutoff)
         self.lpf = LowPassFilter(sampling_period, low_pass_cutoff)
         
         # State variables
-        self.phase = 0.0  # Current phase of perturbation (wt)
+        self.wt = 0.0  # Current phase of perturbation (wt)
         self.integral = 0.0  # Integrator state
         
         # Adaptive gain parameters
         self.m2 = 0.0  # Second moment estimate (for RMS)
         self.beta = 0.8  # Exponential moving average coefficient
         self.epsilon = 1e-8  # Small constant to prevent division by zero
-        
-        # Adaptive gain thresholds
-        self.gradient_threshold = 0.2
-        self.high_gain = -0.025  # Used when gradient magnitude is high
-    
+            
     def update(self, cost: float) -> Tuple[float, float, float, float, float, float]:
         """
         Update the controller with a new cost measurement.
@@ -150,14 +212,15 @@ class ExtremumSeekingController:
         # 1. High-pass filter to remove DC component from cost signal
         hpf_output = self.hpf.apply(cost)
         
-        # 2. Demodulate by multiplying with sin(wt)
-        demodulated = hpf_output * np.sin(self.phase)
+        # 2. Demodulate by multiplying with sin(wt) normalized by (2.0 / self.a)
+        # demodulated = hpf_output * np.sin(self.wt)
+        demodulated = (2.0 / self.a) * hpf_output * np.sin(self.wt)
         
         # 3. Low-pass filter to extract gradient estimate
         lpf_output = self.lpf.apply(demodulated)
         
         # 4. Compute gradient magnitude using exponential moving average of squared gradient
-        self.m2 = self.beta * self.m2 + (1.0 - self.beta) * (lpf_output ** 2)
+        self.m2 = self.beta * self.m2 + (1.0 - self.beta) * np.power(lpf_output, 2)
         gradient_magnitude = np.sqrt(self.m2)
         
         # 5. Determine integrator gain (adaptive or fixed)
@@ -174,27 +237,29 @@ class ExtremumSeekingController:
         setpoint_raw = self.theta_0 + self.integral
         
         # 8. Apply output constraints (clamping with anti-windup)
-        setpoint = max(setpoint_raw, self.min_output)
+        setpoint = np.clip(setpoint_raw, self.min_output, self.max_output)
         
         # 9. Anti-windup: correct integrator if output is saturated
         if setpoint_raw < self.min_output:
             self.integral = self.min_output - self.theta_0
+        elif setpoint_raw > self.max_output:
+            self.integral = self.max_output - self.theta_0
         
         # 10. Add perturbation to get final output
-        perturbation = self.a * np.sin(self.phase)
+        perturbation = self.a * np.sin(self.wt)
         output = setpoint + perturbation
         
         # 11. Update phase for next iteration
-        self.phase += self.omega * self.dt
-        if self.phase > 2 * np.pi:
-            self.phase -= 2 * np.pi
+        self.wt += self.omega * self.dt
+        if self.wt > 2 * np.pi:
+            self.wt -= 2 * np.pi
         
         return (
             output,           # Total output (setpoint + perturbation)
             hpf_output,       # High-pass filtered cost
             lpf_output,       # Gradient estimate
             gradient_magnitude,  # RMS of gradient
-            lpf_output,       # Raw gradient (same as lpf_output)
+            demodulated,       # demodulated gradient
             setpoint          # Base setpoint (no perturbation)
         )
     
@@ -202,14 +267,14 @@ class ExtremumSeekingController:
         """Reset controller state to initial conditions."""
         self.hpf.reset()
         self.lpf.reset()
-        self.phase = 0.0
+        self.wt = 0.0
         self.integral = 0.0
         self.m2 = 0.0
     
     def get_state(self) -> dict:
         """Get current controller state."""
         return {
-            "phase": self.phase,
+            "phase": self.wt,
             "integral": self.integral,
             "m2": self.m2,
             "gradient_magnitude": np.sqrt(self.m2)

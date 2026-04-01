@@ -9,7 +9,7 @@ defaults:
 seed: 0
 # maddpg
 # Whether to use the additional action loss to disincentive action outside the space
-use_action_loss: True
+use_action_loss: False
 action_loss_lr: 0.00003
 
 experiment:

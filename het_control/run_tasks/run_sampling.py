@@ -19,8 +19,8 @@ CONFIG_NAME = "sampling_ippo_config"
 SAVE_PATH = "/home/svarp/Desktop/Projects/ad2c - testEnv/model_checkpoint/sampling_ippo/"
 
 # Training parameters
-MAX_FRAMES = 1_200_000
-CHECKPOINT_INTERVAL = 1_200_000
+MAX_FRAMES = 6_000_000
+CHECKPOINT_INTERVAL = 6_000_000
 
 # Initial SND (matching your reference -1.0 value)
 DESIRED_SND = -1.0
@@ -31,7 +31,7 @@ TASK_OVERRIDES = {
 }
 
 # ESC Controller Configuration
-USE_ESC = True  
+USE_ESC = False  
 ESC_CONFIG_FILE = f"{BASE_DIR}/het_control/conf/callback/escontroller.yaml"
 
 # Specific overrides for this task

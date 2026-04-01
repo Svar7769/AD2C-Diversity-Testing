@@ -4,7 +4,6 @@ Handles all common functionality across different tasks.
 """
 import sys
 import hydra
-from pathlib import Path
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from hydra.core.global_hydra import GlobalHydra
@@ -28,8 +27,10 @@ from het_control.callbacks.callback import (
     ActionSpaceLoss,
     TagCurriculum
 )
-from het_control.callbacks.esc_callback import ESCCallback
-from het_control.callbacks.sndESLogger import TrajectorySNDLoggerCallback
+from het_control.callbacks.esc_callback import ESCCallback 
+from het_control.callbacks.pidCallback import PIDCallback
+# from het_control.callbacks.smartEscCallback import SmartESCCallback
+from het_control.callbacks.adaptiveEsc_callback import AdaptiveESCCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
@@ -42,7 +43,12 @@ def setup(task_name: str) -> None:
     })
     
     # Task-specific render callbacks
-    if task_name in ["vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire","vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", "vmas/reverse_transport","vmas/sampling","vmas/tag"]:
+    vmas_tasks = [
+        "vmas/balance", "vmas/ball_passage", "vmas/ball_trajectory", "vmas/buzz_wire",
+        "vmas/discovery", "vmas/dispersion", "vmas/football", "vmas/navigation", 
+        "vmas/reverse_transport", "vmas/sampling", "vmas/tag"
+    ]
+    if task_name in vmas_tasks:
         VmasTask.render_callback = render_callback
 
 
@@ -84,6 +90,7 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
     
     # Initialize base callbacks (always included)
     callbacks = [
+        # PIDCallback(control_group="agents"),
         SndCallback(),
         NormLoggerCallback(),
     ]
@@ -101,20 +108,23 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
             ESCCallback(
                 control_group=control_group,
                 initial_snd=esc_config.get("initial_snd", 0.0),
-                dither_magnitude=esc_config.get("dither_magnitude", 0.2),
-                dither_frequency_rad_s=esc_config.get("dither_frequency", 1.0),
-                integrator_gain=esc_config.get("integrator_gain", -0.001),
-                high_pass_cutoff_rad_s=esc_config.get("high_pass_cutoff", 0.5),
-                low_pass_cutoff_rad_s=esc_config.get("low_pass_cutoff", 0.1),
+                dither_magnitude=esc_config.get("dither_magnitude", 0.1),
+                dither_frequency=esc_config.get("dither_frequency", 0.5),
+                integrator_gain=esc_config.get("integrator_gain", -0.01),
+                high_pass_cutoff=esc_config.get("high_pass_cutoff", 0.1),
+                low_pass_cutoff=esc_config.get("low_pass_cutoff", 0.05),
                 use_adaptive_gain=esc_config.get("use_adaptive_gain", True),
-                sampling_period=esc_config.get("sampling_period", 1.0),
+                grad_threshold=esc_config.get("gradient_threshold", 5.0),
+                high_gain=esc_config.get("high_gain", -0.015),
                 min_snd=esc_config.get("min_snd", 0.0),
-                max_snd=esc_config.get("max_snd", 3.0)
-            )
+                max_snd=esc_config.get("max_snd", 3.0),
+                reward_scale=esc_config.get("reward_scale", 1.0)
+            ),
+            # AdaptiveESCCallback(
+            #     control_group=control_group,
+            #     initial_snd=esc_config.get("initial_snd", 0.0),
+            # )
         )
-        
-        # Add ESC trajectory logger
-        callbacks.append(TrajectorySNDLoggerCallback(control_group=control_group))
         
         # Add action space loss
         callbacks.append(
@@ -162,7 +172,6 @@ def load_esc_config(config_path: str) -> Dict[str, Any]:
     """
     with open(config_path, 'r') as f:
         full_config = yaml.safe_load(f)
-        # Extract the nested esc_controller section
         return full_config.get('esc_controller', {})
 
 
@@ -175,7 +184,8 @@ def run_experiment(
     desired_snd: float = 0.0,
     task_overrides: Optional[Dict[str, Any]] = None,
     esc_config_path: Optional[str] = None,
-    use_esc: bool = True
+    use_esc: bool = True,
+    seed: Optional[int] = None,
 ):
     """
     Run the experiment with specified configuration.
@@ -196,15 +206,15 @@ def run_experiment(
     if use_esc and esc_config_path is not None:
         esc_config = load_esc_config(esc_config_path)
         
-        # Print what was loaded for debugging
+        # Print loaded configuration
         print("\n" + "="*80)
-        print("📄 Loaded ESC Configuration from file:")
+        print("📄 Loaded ESC Configuration:")
         print("="*80)
         for key, value in esc_config.items():
             print(f"  {key}: {value}")
         print("="*80 + "\n")
         
-        # Use ESC's initial_snd if not explicitly overridden
+        # Use ESC's initial_snd if available
         if 'initial_snd' in esc_config:
             desired_snd = esc_config['initial_snd']
     
@@ -219,38 +229,36 @@ def run_experiment(
         f"experiment.max_n_frames={max_frames}",
         f"experiment.checkpoint_interval={checkpoint_interval}",
         f"experiment.save_folder={save_path}",
+        f"model.desired_snd={desired_snd}",
     ])
     
-    # Set model.desired_snd (required for model initialization)
-    sys.argv.append(f"model.desired_snd={desired_snd}")
+    if seed is not None:
+        sys.argv.append(f"seed={seed}")
     
     # Add ESC parameters if using ESC
     if use_esc and esc_config is not None:
-        # Add new ESC parameters with + prefix (directly from loaded config)
-        esc_params_to_add = {
+        # Core ESC parameters (add with + prefix as they don't exist in base config)
+        esc_params = {
             "initial_snd": esc_config.get('initial_snd', 0.0),
-            "esc_dither_magnitude": esc_config.get('dither_magnitude', 0.2),
-            "esc_dither_frequency": esc_config.get('dither_frequency', 1.0),
-            "esc_integrator_gain": esc_config.get('integrator_gain', -0.001),
-            "esc_high_pass_cutoff": esc_config.get('high_pass_cutoff', 0.5),
-            "esc_low_pass_cutoff": esc_config.get('low_pass_cutoff', 0.1),
+            "esc_dither_magnitude": esc_config.get('dither_magnitude', 0.1),
+            "esc_dither_frequency": esc_config.get('dither_frequency', 0.5),
+            "esc_integrator_gain": esc_config.get('integrator_gain', -0.01),
+            "esc_high_pass_cutoff": esc_config.get('high_pass_cutoff', 0.1),
+            "esc_low_pass_cutoff": esc_config.get('low_pass_cutoff', 0.05),
             "esc_use_adaptive_gain": esc_config.get('use_adaptive_gain', True),
             "esc_sampling_period": esc_config.get('sampling_period', 1.0),
             "esc_min_snd": esc_config.get('min_snd', 0.0),
             "esc_max_snd": esc_config.get('max_snd', 3.0),
         }
         
-        for param, value in esc_params_to_add.items():
+        for param, value in esc_params.items():
             sys.argv.append(f"+{param}={value}")
         
-        # Override existing parameters
-        esc_override_params = {
-            "use_action_loss": esc_config.get('use_action_loss', False),
-            "action_loss_lr": esc_config.get('action_loss_lr', 0.001),
-        }
-        
-        for param, value in esc_override_params.items():
-            sys.argv.append(f"{param}={value}")
+        # Override existing parameters (without + prefix)
+        sys.argv.extend([
+            f"use_action_loss={esc_config.get('use_action_loss', True)}",
+            f"action_loss_lr={esc_config.get('action_loss_lr', 0.001)}",
+        ])
     
     # Add task overrides if provided
     if task_overrides:
@@ -259,31 +267,37 @@ def run_experiment(
     
     # Print configuration summary
     print("\n" + "="*80)
-    print("Starting Experiment")
+    print("🚀 Starting Experiment")
     print("="*80)
-    print(f"Config path: {config_path}")
-    print(f"Config name: {config_name}")
+    print(f"Config: {config_path}/{config_name}")
     print(f"Save path: {save_path}")
     print(f"Max frames: {max_frames:,}")
     print(f"Checkpoint interval: {checkpoint_interval:,}")
-    print(f"Desired SND: {desired_snd}")
+    print(f"Initial SND: {desired_snd}")
     
     if use_esc and esc_config:
         print(f"\n🎛️  ESC Controller: ENABLED")
-        print(f"Control group: {esc_config.get('control_group', 'agents')}")
-        print(f"  Dither: ±{esc_config.get('dither_magnitude', 0.2)} @ {esc_config.get('dither_frequency', 1.0)} rad/s")
-        print(f"  Integrator gain: {esc_config.get('integrator_gain', -0.001)}")
-        print(f"  HPF cutoff: {esc_config.get('high_pass_cutoff', 0.5)} rad/s")
-        print(f"  LPF cutoff: {esc_config.get('low_pass_cutoff', 0.1)} rad/s")
-        print(f"  Adaptive gain: {esc_config.get('use_adaptive_gain', True)}")
-        print(f"  SND bounds: [{esc_config.get('min_snd', 0.0)}, {esc_config.get('max_snd', 3.0)}]")
+        
+        # Determine mode
+        if esc_config.get('use_adaptive_gain', True):
+            mode_desc = "ESC with Adaptive Gain"
+        else:
+            mode_desc = "Classical ESC"
+        
+        print(f"   Mode: {mode_desc}")
+        print(f"   Control group: {esc_config.get('control_group', 'agents')}")
+        print(f"   Initial SND: {esc_config.get('initial_snd', 0.0)}")
+        print(f"   Dither: ±{esc_config.get('dither_magnitude', 0.1)} @ {esc_config.get('dither_frequency', 0.5)} rad/s")
+        print(f"   Integrator gain: {esc_config.get('integrator_gain', -0.01)}")
+        print(f"   Filters: HPF={esc_config.get('high_pass_cutoff', 0.1)}, LPF={esc_config.get('low_pass_cutoff', 0.05)} rad/s")
+        print(f"   SND bounds: [{esc_config.get('min_snd', 0.0)}, {esc_config.get('max_snd', 3.0)}]")
     else:
         print(f"\n🎛️  ESC Controller: DISABLED")
     
     if task_overrides:
-        print(f"\nTask overrides:")
+        print(f"\n📋 Task overrides:")
         for param, value in task_overrides.items():
-            print(f"  {param}: {value}")
+            print(f"   {param}: {value}")
     
     print("="*80 + "\n")
     
@@ -300,14 +314,14 @@ def run_experiment(
     try:
         hydra_experiment()
         print("\n" + "="*80)
-        print("✅ Experiment finished successfully!")
+        print("✅ Experiment completed successfully!")
         print("="*80 + "\n")
     except SystemExit:
         print("\n" + "="*80)
-        print("⚠️  Experiment terminated.")
+        print("⚠️  Experiment terminated")
         print("="*80 + "\n")
     except Exception as e:
         print("\n" + "="*80)
-        print(f"❌ ERROR: An error occurred: {e}")
+        print(f"❌ ERROR: {e}")
         print("="*80 + "\n")
         raise

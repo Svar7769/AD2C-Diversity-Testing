@@ -1,8 +1,3 @@
-#  Copyright (c) 2024.
-#  ProrokLab (https://www.proroklab.org/)
-#  All rights reserved.
-
-
 import torch
 from tensordict import TensorDictBase, TensorDict
 from torchrl.envs import EnvBase
@@ -22,34 +17,27 @@ def render_callback(experiment, env: EnvBase, data: TensorDictBase):
     env_index = 0
 
     def snd(pos):
-        """
-        Given a position, this function returns the SND of the policies in that observation
-        """
         obs = env.scenario.observation_from_pos(
             torch.tensor(pos, device=model.device), env_index=env_index
         )
-        obs = obs.view(-1, env.n_agents, obs.shape[-1]).to(torch.float)
+        n_pos = pos.shape[0]
+        obs = obs.unsqueeze(1).expand(n_pos, env.n_agents, obs.shape[-1]).to(torch.float)
         obs_td = TensorDict(
             {"agents": TensorDict({"observation": obs}, obs.shape[:2])}, obs.shape[:1]
         )
-
         agent_actions = []
         for i in range(model.n_agents):
-            agent_actions.append(
-                model._forward(obs_td, agent_index=i).get(model.out_key)
-            )
-        
-        # This function now correctly returns a tensor of shape [batch_size, n_pairs].
-        pairwise_distances = compute_behavioral_distance(
+            action = model._forward(obs_td, agent_index=i).get(model.out_key)
+            agent_actions.append(action[:, i:i+1, :])  # select only agent i's action
+        distance = compute_behavioral_distance(
             agent_actions,
             just_mean=True,
         )
-        
-        # We can now simply take the mean across the pairs.
-        avg_distance = pairwise_distances.mean(dim=-1)
-
-        # Reshape to the [batch_size, 1] column vector required by the renderer.
-        return avg_distance.view(-1, 1)
+        # Average pairwise distances down to one scalar per position
+        if distance.dim() > 1:
+            distance = distance.mean(dim=tuple(range(1, distance.dim())))
+        distance = distance.view(n_pos, 1)
+        return distance
 
     return env.render(
         mode="rgb_array",

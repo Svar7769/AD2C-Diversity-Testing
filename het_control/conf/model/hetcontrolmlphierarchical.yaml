@@ -1,0 +1,68 @@
+# Model name (matches the registry key in run.py)
+name: hetcontrolmlphierarchical
+
+# List of layers in the MLP. Shared across all hierarchical levels.
+num_cells: [256, 256]
+
+# Activation class between MLP layers.
+activation_class: torch.nn.Tanh
+
+# =============================================================================
+# Hierarchical Subteam Parameters
+# =============================================================================
+
+# Number of behavioral clusters/subteams (K)
+n_subteams: 3
+
+# Temperature for soft subteam assignment
+subteam_tau: 0.1
+
+# If True, uses argmax for subteam assignment instead of softmax mixture
+use_hard_assignment: false
+
+# =============================================================================
+# Hierarchical Weight Initializations (Learnable Parameters)
+# =============================================================================
+
+# Initial contribution of the team-wide shared baseline
+shared_weight_init: 1.0
+
+# Initial contribution of the subteam cluster logic (scaled by DiCo)
+subteam_weight_init: 0.5
+
+# Initial contribution of the individual agent logic (scaled by DiCo)
+agent_weight_init: 0.25
+
+# =============================================================================
+# Weight Processing Options
+# =============================================================================
+
+# If True, normalize weights to sum to 1
+normalize_weights: false
+
+# If True, clip weights to be non-negative
+clip_weights: true
+
+# =============================================================================
+# Diversity (DiCo) Parameters
+# =============================================================================
+
+# The desired SND diversity (SND_des)
+desired_snd: null
+
+# The soft-update parameter of the estimated diversity
+tau: 0.01
+
+# Whether on the first iteration the estimated SND should be bootstrapped
+bootstrap_from_desired_snd: true
+
+# =============================================================================
+# Policy Processing (BenchMARL dynamic parameters)
+# =============================================================================
+
+# Whether to process the homogeneous part with a tanh squashing operation
+process_shared: true
+
+# Parameters filled dynamically. Do not change.
+probabilistic: null
+scale_mapping: null
