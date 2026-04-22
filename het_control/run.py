@@ -27,6 +27,7 @@ from het_control.callbacks.callback import (
     ActionSpaceLoss,
     TagCurriculum
 )
+from het_control.callbacks.rollout_collector import RolloutCollectorCallback
 from het_control.callbacks.esc_callback import ESCCallback 
 from het_control.callbacks.pidCallback import PIDCallback
 # from het_control.callbacks.smartEscCallback import SmartESCCallback
@@ -144,6 +145,10 @@ def get_experiment(cfg: DictConfig, esc_config: Optional[Dict[str, Any]] = None)
     
     # Always add SND visualizer
     callbacks.append(SNDVisualizerCallback())
+
+    SAVE_ROLLOUT = True  # set True to collect rollout data for world model training
+    if SAVE_ROLLOUT:
+        callbacks.append(RolloutCollectorCallback(rollout_dir="/home/svarp/Desktop/Projects/ADiCo/rollout_data"))
     
     # Add task-specific callbacks
     if task_name == "vmas/simple_tag":

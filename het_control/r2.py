@@ -54,7 +54,7 @@ def hydra_experiment(cfg: DictConfig) -> None:
     """The main evaluation function with a manual evaluation loop and W&B logging."""
     task_name = "vmas/navigation"
     algorithm_name = "ippo"
-    
+
     # 1. Initialize Weights & Biases
     wandb.init(
         project="AD2C_evaluation",
@@ -63,16 +63,16 @@ def hydra_experiment(cfg: DictConfig) -> None:
     )
 
     experiment = get_evaluation_experiment(cfg=cfg, task_name=task_name, algorithm_name=algorithm_name)
-    
+
     print(f"\nLoading model from: {cfg.experiment.restore_file}")
     experiment.algorithm.load_state_dict_from_file(experiment.config.restore_file)
-    
+
     task = experiment.task
     policy = experiment.algorithm.get_policy_for_collection("evaluation")
 
     print("Starting evaluation run...")
     tensordict = task.reset()
-    
+
     for i in range(experiment.config.max_n_frames):
         task.render()
         with torch.no_grad():
