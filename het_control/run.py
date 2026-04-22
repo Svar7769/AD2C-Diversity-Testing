@@ -29,9 +29,6 @@ from het_control.callbacks.callback import (
 )
 from het_control.callbacks.rollout_collector import RolloutCollectorCallback
 from het_control.callbacks.esc_callback import ESCCallback 
-from het_control.callbacks.pidCallback import PIDCallback
-# from het_control.callbacks.smartEscCallback import SmartESCCallback
-from het_control.callbacks.adaptiveEsc_callback import AdaptiveESCCallback
 from het_control.callbacks.sndVisualCallback import SNDVisualizerCallback
 from het_control.environments.vmas import render_callback
 from het_control.models.het_control_mlp_empirical import HetControlMlpEmpiricalConfig
